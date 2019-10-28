@@ -115,7 +115,7 @@ namespace ufo
     {
       if (isOpX<TRUE>(b)) return true;
       if (isOpX<FALSE>(a)) return true;
-      return ! isSat(a, mkNeg(b));
+      return bool(! isSat(a, mkNeg(b)));
     }
 
     /**
@@ -123,7 +123,7 @@ namespace ufo
      */
     bool isTrue(Expr a){
       if (isOpX<TRUE>(a)) return true;
-      return !isSat(mkNeg(a));
+      return bool(!isSat(mkNeg(a)));
     }
 
     /**
@@ -131,7 +131,7 @@ namespace ufo
      */
     bool isFalse(Expr a){
       if (isOpX<FALSE>(a)) return true;
-      return !isSat(a);
+      return bool(!isSat(a));
     }
 
     /**
@@ -147,7 +147,7 @@ namespace ufo
       ExprSet assumptions;
       assumptions.insert(mk<NEQ>(v, val));
 
-      return (!isSat(assumptions, false));
+      return bool(!isSat(assumptions, false));
     }
 
     /**

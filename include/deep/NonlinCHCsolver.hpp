@@ -99,7 +99,7 @@ namespace ufo
           negged.insert(mkNeg(replaceAll(a, ruleManager.invVars[rel], hr.dstVars)));
         checkList.insert(disjoin(negged, m_efac));
       }
-      return !u.isSat(checkList);
+      return bool(!u.isSat(checkList));
     }
 
     void preproGuessing(Expr e, ExprVector& ev1, ExprVector& ev2, ExprSet& guesses)
