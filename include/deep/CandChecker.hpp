@@ -157,6 +157,16 @@ namespace ufo
 
     ExprSet cands;
 
+    std::unordered_set<Expr> constants;
+    auto isConstant = [](Expr expr) { return bv::is_bvnum(expr); };
+    expr::filter(tr->body, isConstant, std::inserter(constants, constants.begin()));
+    expr::filter(fc->body, isConstant, std::inserter(constants, constants.begin()));
+    expr::filter(qr->body, isConstant, std::inserter(constants, constants.begin()));
+//    std::cout << "Found constants: " << constants.size() << '\n';
+//    for (auto & con : constants) {
+//      std::cout << *con << '\n';
+//    }
+
     // get inv vars
     map<int, ExprVector> bvVars;
     map<int, Expr> bitwidths;
@@ -215,6 +225,22 @@ namespace ufo
       }
     }
 
+    bool enable_comparison = true;
+    if (enable_comparison)
+    {
+      for (int i : bitwidths_int)
+      {
+        if (i > bw_bound) continue; // limit
+        for (auto constant_expr : constants) {
+          if (bv::width(bind::type(constant_expr)) != i) { continue; }
+          for (int j = 0; j < bvVars[i].size(); j++) {
+            cands.insert(bv::bvule(bvVars[i][j], constant_expr));
+            cands.insert(bv::bvuge(bvVars[i][j], constant_expr));
+          }
+        }
+      }
+    }
+
     if (enable_concr)
     {
       for (int i : bitwidths_int)
@@ -253,8 +279,10 @@ namespace ufo
     }
 
     int iter = 0;
+//    outs() << "Candidates considered: " << cands.size() << '\n';
     for (auto & cand : cands)
     {
+//      outs() << "Candidate: " << *cand << '\n';
       iter++;
       if (cc.checkInitiation(cand) &&
           cc.checkInductiveness(cand) &&

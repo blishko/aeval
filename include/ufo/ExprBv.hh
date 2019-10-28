@@ -162,6 +162,8 @@ namespace expr
       /* XXX Add helper methods as needed */
 
       inline Expr bvnot (Expr v) {return mk<BNOT> (v);}
+      inline Expr bvule (Expr f, Expr s) { return mk<BULE> (f,s); }
+      inline Expr bvuge (Expr f, Expr s) { return mk<BUGE> (f,s); }
       
       inline Expr extract (unsigned high, unsigned low, Expr v)
       {
