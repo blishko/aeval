@@ -84,6 +84,21 @@ namespace expr
           isOpX<MPZ> (v->arg (0)) && isOpX<BVSORT> (v->arg (1));
       }
 
+      /// true if v is a bit-vector variable
+      inline bool is_bvconst (Expr v)
+      {
+        return isOpX<FAPP> (v) &&
+          isOpX<FDECL> (v->first()) && v->first()->arity () == 2 &&
+          isOpX<BVSORT> (v->first()->arg (1));
+      }
+      
+      /// true if v is a bit-vector variable
+      inline bool is_bvvar (Expr v)
+      {
+        return isOpX<BIND> (v) && v->arity () >= 2 &&
+          !isOpX<MPZ> (v->left()) && isOpX<BVSORT> (v->right());
+      }
+
       inline mpz_class toMpz (Expr v)
       {
         assert (is_bvnum (v));
@@ -150,8 +165,8 @@ namespace expr
       
       inline Expr extract (unsigned high, unsigned low, Expr v)
       {
-        assert (high > low);
-        return mk<BEXTRACT> (mkTerm<unsigned> (high, v->efac ()), 
+//        assert (high > low);
+        return mk<BEXTRACT> (mkTerm<unsigned> (high, v->efac ()),
                              mkTerm<unsigned> (low, v->efac ()), v);
       }
       
@@ -170,6 +185,18 @@ namespace expr
       
     }
     
+    namespace bind
+    {
+      class IsVVar : public std::unary_function<Expr,bool>
+      {
+      public:
+        bool operator () (Expr e)
+        {
+          return isIntVar(e) || isRealVar(e) || isBoolVar(e) || bv::is_bvvar(e) || isVar<ARRAY_TY> (e);
+        }
+      };
+    }
+
   }
 }
 

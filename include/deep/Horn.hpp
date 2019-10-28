@@ -44,6 +44,8 @@ namespace ufo
     bool isQuery;
     bool isInductive;
 
+    ExprMap origNames;
+
     void assignVarsAndRewrite (ExprVector& _srcVars, ExprVector& invVarsSrc,
                                ExprVector& _dstVars, ExprVector& invVarsDst)
     {
@@ -51,6 +53,7 @@ namespace ufo
       {
         srcVars.push_back(invVarsSrc[i]);
         body = mk<AND>(body, mk<EQ>(_srcVars[i], srcVars[i]));
+        origNames[srcVars[i]] = _srcVars[i];
       }
 
       for (int i = 0; i < _dstVars.size(); i++)
@@ -85,6 +88,7 @@ namespace ufo
     vector<vector<int>> prefixes;  // for cycles
     vector<vector<int>> cycles;
     bool hasArrays = false;
+    bool hasBV = false;
 
     CHCs(ExprFactory &efac, EZ3 &z3) : m_efac(efac), m_z3(z3)  {};
 
@@ -158,6 +162,8 @@ namespace ufo
                   (mk<INT_TY> (m_efac), mk<INT_TY> (m_efac)));
             hasArrays = true;
           }
+          else if (isOpX<BVSORT> (a->arg(i)))
+            var = bv::bvConst(new_name, bv::width(a->arg(i)));
           invVars[a->arg(0)].push_back(var);
         }
       }
@@ -216,12 +222,24 @@ namespace ufo
           }
 
           ExprVector actual_vars;
-          expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
-//          if (actual_vars.size() == 0)
-//          {
-//            chcs.pop_back();
-//            continue;
-//          }
+
+// block from modver
+//          expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
+////          if (actual_vars.size() == 0)
+////          {
+////            chcs.pop_back();
+////            continue;
+////          }
+// end of block from modver
+// block from bv
+          expr::filter (r, bind::IsVVar(), std::inserter (actual_vars, actual_vars.begin ()));
+          //expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
+          if (actual_vars.size() == 0)
+          {
+            chcs.pop_back();
+            continue;
+          }
+// end of block from bv
 
           assert(actual_vars.size() <= hr.locVars.size());
 
@@ -229,8 +247,21 @@ namespace ufo
           for (int i = 0; i < actual_vars.size(); i++)
           {
             string a1 = lexical_cast<string>(bind::name(actual_vars[i]));
-            int ind = hr.locVars.size() - 1 - atoi(a1.substr(1).c_str());
-            repl_vars.push_back(hr.locVars[ind]);
+            bool found = false;
+            for (auto & x : hr.locVars)
+            {
+              if (lexical_cast<string>(x) == a1)
+              {
+                found = true;
+                repl_vars.push_back(x);
+                break;
+              }
+            }
+            if (!found)
+            {
+              int ind = hr.locVars.size() - 1 - atoi(a1.substr(1).c_str());
+              repl_vars.push_back(hr.locVars[ind]);
+            }
           }
           rule = replaceAll(rule, actual_vars, repl_vars);
         }
@@ -287,20 +318,20 @@ namespace ufo
       }
 
       // remove useless rules
-      if (failShrink(failDecl))
-        for (auto rit = indeces.rbegin(); rit != indeces.rend(); ++rit)
-          chcs.erase(chcs.begin() + *rit);
-
-      indeces.clear();
-      chcSliceBwd(failDecl);
-      vector<HornRuleExt> tmpChcs;
-      for (auto i : indeces) tmpChcs.push_back(chcs[i]);
-      chcs = tmpChcs;
-      for (int i = 0; i < chcs.size(); i++)
-        outgs[chcs[i].srcRelation].push_back(i);
-
-      // sort rules
-      wtoSort();
+//      if (failShrink(failDecl))
+//        for (auto rit = indeces.rbegin(); rit != indeces.rend(); ++rit)
+//          chcs.erase(chcs.begin() + *rit);
+//
+//      indeces.clear();
+//      chcSliceBwd(failDecl);
+//      vector<HornRuleExt> tmpChcs;
+//      for (auto i : indeces) tmpChcs.push_back(chcs[i]);
+//      chcs = tmpChcs;
+//      for (int i = 0; i < chcs.size(); i++)
+//        outgs[chcs[i].srcRelation].push_back(i);
+//
+//      // sort rules
+//      wtoSort();
     }
 
     bool failShrink (Expr dstRel)
@@ -317,7 +348,7 @@ namespace ufo
         Expr tmp = chcs[i].body;
 
          // current limitations
-        if (findNonlin(tmp) || containsOp<IDIV>(tmp) || containsOp<MOD>(tmp)) return false;
+        if (findNonlin(tmp) || containsOp<IDIV>(tmp) || containsOp<MOD>(tmp) || containsOp<BVSORT>(tmp)) return false;
 
         if (quantified.size() > 0)
         {
@@ -773,7 +804,7 @@ namespace ufo
         fp.addRule(allVars, boolop::limp (mk<AND>(pre, r.body), r.head));
       }
       try {
-        success = !fp.query(errApp);
+        success = (bool)!fp.query(errApp);
       } catch (z3::exception &e){
         char str[3000];
         strncpy(str, e.msg(), 300);
