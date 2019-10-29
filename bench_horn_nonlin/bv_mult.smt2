@@ -1,0 +1,16 @@
+;(declare-rel f ((_ BitVec 16) (_ BitVec 16)))
+;(declare-rel g ((_ BitVec 16) (_ BitVec 16)))
+(declare-rel mult ((_ BitVec 16) (_ BitVec 16) (_ BitVec 16)))
+(declare-rel fail ())
+(declare-var x (_ BitVec 16))
+(declare-var y (_ BitVec 16))
+(declare-var z (_ BitVec 16))
+(declare-var xp (_ BitVec 16))
+(declare-var yp (_ BitVec 16))
+(declare-var zp (_ BitVec 16))
+
+(rule (=> (and (= #x0000 x) (= #x0000 z)) (mult x y z)))
+(rule (=> (and (mult x y z) (= xp (bvadd x #x0001)) (= zp (bvadd z y))) (mult xp y zp)))
+(rule (=> (and (mult x y z) (mult xp yp zp) (= x xp) (= y yp) (bvult x #x1000) (bvult y #x1000) (not (= z zp))) fail))
+
+(query fail)
