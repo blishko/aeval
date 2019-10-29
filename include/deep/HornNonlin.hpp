@@ -163,6 +163,9 @@ namespace ufo
             var = bind::mkConst(new_name, mk<ARRAY_TY>
                   (mk<INT_TY> (m_efac), mk<INT_TY> (m_efac)));
           }
+          else if (isOpX<BVSORT> (a->arg(i))) {
+            var = bv::bvConst(new_name, bv::width(a->arg(i)));
+          }
           invVars[a->arg(0)].push_back(var);
         }
       }
@@ -221,7 +224,13 @@ namespace ufo
           }
 
           ExprVector actual_vars;
-          expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
+          expr::filter (rule, bind::IsVVar(), std::inserter (actual_vars, actual_vars.begin ()));
+          //expr::filter (rule, bind::IsVar(), std::inserter (actual_vars, actual_vars.begin ()));
+          if (actual_vars.size() == 0)
+          {
+            chcs.pop_back();
+            continue;
+          }
 
           assert(actual_vars.size() <= hr.locVars.size());
 
