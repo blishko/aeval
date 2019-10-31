@@ -156,14 +156,27 @@ namespace expr
     NOP(BEXT_ROTATE_RIGHT,"bvextrotright",FUNCTIONAL,BvOp)
     NOP(INT2BV,"int2bv",FUNCTIONAL,BvOp)
     NOP(BV2INT,"bv2int",FUNCTIONAL,BvOp)
-    
+
     namespace bv
     {
       /* XXX Add helper methods as needed */
 
       inline Expr bvnot (Expr v) {return mk<BNOT> (v);}
+      inline Expr bvadd (Expr a, Expr b) { return mk<BADD> (a, b); }
       inline Expr bvule (Expr f, Expr s) { return mk<BULE> (f,s); }
       inline Expr bvuge (Expr f, Expr s) { return mk<BUGE> (f,s); }
+      inline Expr bvult (Expr f, Expr s) { return mk<BULT> (f,s); }
+      inline Expr bvugt (Expr f, Expr s) { return mk<BUGT> (f,s); }
+      inline Expr bvsge (Expr f, Expr s) { return mk<BSGE> (f,s); }
+      inline Expr bvsgt (Expr f, Expr s) { return mk<BSGT> (f,s); }
+      inline Expr bvsle (Expr f, Expr s) { return mk<BSLE> (f,s); }
+      inline Expr bvslt (Expr f, Expr s) { return mk<BSLT> (f,s); }
+
+      inline bool isBVComparison(Expr e) {
+        return isOp<BvOp>(e) && (isOpX<BULT>(e) || isOpX<BULE>(e)
+                                 || isOpX<BUGT>(e) || isOpX<BUGE>(e)
+                                 || isOpX<BSLT>(e) || isOpX<BSLE>(e) || isOpX<BSGT>(e) || isOpX<BSGE>(e));
+      }
       
       inline Expr extract (unsigned high, unsigned low, Expr v)
       {

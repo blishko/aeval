@@ -102,8 +102,9 @@ namespace ufo
       return bool(!u.isSat(checkList));
     }
 
-    void preproGuessing(Expr e, ExprVector& ev1, ExprVector& ev2, ExprSet& guesses)
+    void preproGuessing(Expr e, ExprVector& ev1, ExprVector& ev2, ExprSet& guesses, bool useBV=false)
     {
+//      std::cout << "preproGuessing called on " << *e << std::endl;
       ExprSet ev3;
       filter (e, bind::IsConst (), inserter (ev3, ev3.begin())); // prepare vars
       for (auto it = ev3.begin(); it != ev3.end(); )
@@ -137,7 +138,12 @@ namespace ufo
           if (newDsjs.size() > 0) e = replaceAll(e, c2, disjoin(newDsjs, m_efac));
         }
       }
-      mutateHeuristic(replaceAll(e, ev1, ev2), guesses);
+      if (useBV) {
+        mutateHeuristicBV(replaceAll(e, ev1, ev2), guesses);
+      }
+      else {
+        mutateHeuristic(replaceAll(e, ev1, ev2), guesses);
+      }
     }
 
     void bootstrapping()
@@ -155,8 +161,8 @@ namespace ufo
               ExprSet vars;
               vars.insert(hr.locVars.begin(), hr.locVars.end());
               Expr q = quantifierElimination(hr.body, vars); //we shouldn't do it here; to fix
-              preproGuessing(mk<NEG>(q), hr.srcVars[i],
-                             ruleManager.invVars[hr.srcRelations[i]], candidates[hr.srcRelations[i]]);
+              preproGuessing(mkNeg(q), hr.srcVars[i],
+                             ruleManager.invVars[hr.srcRelations[i]], candidates[hr.srcRelations[i]], ruleManager.hasBV);
               if (!candidates[hr.srcRelations[i]].empty()) propProgress.erase(hr.srcRelations[i]); // for stats
             }
           }
@@ -320,7 +326,9 @@ namespace ufo
         }
         else return false;
       }
-      else return multiHoudini(worklist);
+      else {
+        return multiHoudini(worklist);
+      }
     }
 
     bool anyProgress(vector<HornRuleExt*>& worklist)
@@ -486,6 +494,12 @@ namespace ufo
       bootstrapping();
 
       auto post = candidates;
+//      for (auto const& entry : candidates) {
+//        std::cout << *entry.first << '\n';
+//        for (auto const& cand : entry.second) {
+//          std::cout << '\t' << *cand << '\n';
+//        }
+//      }
       filterUnsat();
       propagateCandidatesForward();
 
@@ -604,6 +618,8 @@ namespace ufo
     EZ3 z3(m_efac);
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
+//    ruleManager.print();
+//    exit(1);
     NonlinCHCsolver nonlin(ruleManager);
     if (inv)
       nonlin.guessAndSolve();

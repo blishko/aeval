@@ -1439,8 +1439,43 @@ namespace ufo
     {
       return mk<LT>(lhs, rhs);
     }
-    assert(isOpX<GT>(term));
-    return mk<GT>(lhs, rhs);
+    if (isOpX<GT>(term))
+    {
+      return mk<GT>(lhs, rhs);
+    }
+    if (isOpX<BULE>(term))
+    {
+      return bv::bvule(lhs, rhs);
+    }
+    if (isOpX<BULT>(term))
+    {
+      return bv::bvult(lhs, rhs);
+    }
+    if (isOpX<BUGE>(term))
+    {
+      return bv::bvuge(lhs, rhs);
+    }
+    if (isOpX<BUGT>(term))
+    {
+      return bv::bvugt(lhs, rhs);
+    }
+    if (isOpX<BSLE>(term))
+    {
+      return bv::bvsle(lhs, rhs);
+    }
+    if (isOpX<BSLT>(term))
+    {
+      return bv::bvslt(lhs, rhs);
+    }
+    if (isOpX<BSGE>(term))
+    {
+      return bv::bvsge(lhs, rhs);
+    }
+    if (isOpX<BSGT>(term))
+    {
+      return bv::bvsgt(lhs, rhs);
+    }
+    assert(false);
   }
   
   inline static Expr reBuildNegCmp(Expr term, Expr lhs, Expr rhs)
@@ -1536,7 +1571,8 @@ namespace ufo
   {
     // don't consider ITE-s
     return (isOp<NumericOp>(a) || isOpX<MPZ>(a) ||
-            isOpX<MPQ>(a) || bind::isIntConst(a) || isOpX<SELECT>(a));
+            isOpX<MPQ>(a) || bind::isIntConst(a) || isOpX<SELECT>(a)
+            || bv::is_bvnum(a));
   }
 
   inline static Expr convertToGEandGT(Expr term)
@@ -1584,6 +1620,18 @@ namespace ufo
 
     }
     return term;
+  }
+
+  Expr convertBVToLeqAndLt(Expr e) {
+    assert(bv::isBVComparison(e));
+    if (isOpX<BULE>(e) || isOpX<BULT>(e) || isOpX<BSLE>(e) || isOpX<BSLT>(e)) {
+      return e;
+    }
+    if (isOpX<BUGE>(e)) { return bv::bvule(e->right(), e->left()); }
+    if (isOpX<BUGT>(e)) { return bv::bvult(e->right(), e->left()); }
+    if (isOpX<BSGE>(e)) { return bv::bvsle(e->right(), e->left()); }
+    if (isOpX<BSGT>(e)) { return bv::bvslt(e->right(), e->left()); }
+    return nullptr;
   }
 
   /* find expressions of type expr = arrayVar in e and store it in output */
@@ -3196,6 +3244,128 @@ namespace ufo
             !evalLeq(in1->left(), in2->right()))
         {
           guesses.insert(mk<LEQ>(in1->left(), in2->right()));
+        }
+      }
+    }
+  }
+
+
+  inline static void mutateHeuristicBV (Expr exp, ExprSet& guesses /*, int bnd = 100*/)
+  {
+//    std::cout << "Mutate called on " << *exp << std::endl;
+    exp = unfoldITE(exp);
+    ExprSet cnjs;
+    getConj(exp, cnjs);
+    ExprSet ineqs;
+    ExprSet eqs;
+    ExprSet disjs;
+    for (auto c : cnjs)
+    {
+      if (isOpX<NEG>(c)) c = c->left();
+
+      if (isOpX<EQ>(c))
+      {
+        if (isNumeric(c->left()))
+        {
+          eqs.insert(c);
+          ineqs.insert(bv::bvule(c->right(), c->left()));
+          ineqs.insert(bv::bvule(c->left(), c->right()));
+          // TODO: signed?
+        }
+        else
+        {
+          guesses.insert(c);
+        }
+      }
+      else if (bv::isBVComparison(c))
+      {
+        c = convertBVToLeqAndLt(c);
+        guesses.insert(c);
+        ineqs.insert(c);
+      }
+      else if (isOpX<OR>(c))
+      {
+        ExprSet terms;
+        getDisj(c, terms);
+        ExprSet newTerms;
+        for (auto t : terms)
+        {
+          if (newTerms.size() > 2) continue; // don't consider large disjunctions
+          if (isOpX<NEG>(t)) t = mkNeg(t->left());
+          if (!bv::isBVComparison(t)) continue;
+          if (!isNumeric(t->left())) continue;
+          newTerms.insert(t);
+        }
+        c = disjoin(newTerms, c->getFactory());
+        disjs.insert(c);
+        guesses.insert(c);
+      }
+      else guesses.insert(c);
+    }
+
+    for (auto & z : eqs)
+    {
+      for (auto & in : ineqs)
+      {
+        //if (bnd > guesses.size()) return;
+        if (!emptyIntersect(z, in)) continue;
+        ineqs.insert(bv::bvule(bv::bvadd(in->left(), z->left()),bv::bvadd(in->right(), z->right())));
+        ineqs.insert(bv::bvule(bv::bvadd(in->left(), z->right()),bv::bvadd(in->right(), z->left())));
+      }
+
+      for (auto & d : disjs)
+      {
+        //if (bnd > guesses.size()) return;
+        ExprSet terms;
+        getDisj(d, terms);
+        ExprSet newTerms;
+        for (auto c : terms)
+        {
+          if (bv::isBVComparison(c))
+          {
+            if (emptyIntersect(z, c))
+              newTerms.insert(reBuildCmp(c,
+                                         bv::bvadd(c->left(), z->left()), bv::bvadd(c->right(), z->right())));
+            else newTerms.insert(c);
+          }
+          else newTerms.insert(c);
+        }
+        if (newTerms.size() > 0)
+          guesses.insert(disjoin(newTerms, d->getFactory()));
+      }
+    }
+
+    guesses.insert(ineqs.begin(), ineqs.end());
+
+    for (auto & e : eqs)
+    {
+      for (auto & in : ineqs)
+      {
+        //if (bnd > guesses.size()) return;
+//        assert(isOpX<LEQ>(in));
+        Expr g;
+        if (in->left() == e->left() && !evalLeq(e->right(), in->right()))
+          g = reBuildCmp(in, e->right(), in->right());
+        else if (in->left() == e->right() && !evalLeq(e->left(), in->right()))
+          g = reBuildCmp(in, e->left(), in->right());
+        else if (in->right() == e->left() && !evalLeq(in->left(), e->right()))
+          g = reBuildCmp(in, in->left(), e->right());
+        else if (in->right() == e->right() && !evalLeq(in->left(), e->left()))
+          g = reBuildCmp(in, in->left(), e->left());
+
+        if (g != NULL) guesses.insert(g);
+      }
+    }
+
+    for (auto & in1 : ineqs)
+    {
+      for (auto & in2 : ineqs)
+      {
+  //        if (bnd > guesses.size()) return;
+        if (in1 == in2) continue;
+
+        if (isOpX<BULE>(in1) && isOpX<BULE>(in2) && (in1->right() == in2->left())) {
+          guesses.insert(bv::bvule(in1->left(), in2->right()));
         }
       }
     }

@@ -88,6 +88,7 @@ namespace ufo
     map<Expr, vector<int>> incms;
     int qCHCNum;  // index of the query in chc
     int total_var_cnt = 0;
+    bool hasBV = false;
 
     CHCs(ExprFactory &efac, EZ3 &z3) : m_efac(efac), m_z3(z3)  {};
 
@@ -165,6 +166,7 @@ namespace ufo
           }
           else if (isOpX<BVSORT> (a->arg(i))) {
             var = bv::bvConst(new_name, bv::width(a->arg(i)));
+            hasBV = true;
           }
           invVars[a->arg(0)].push_back(var);
         }
