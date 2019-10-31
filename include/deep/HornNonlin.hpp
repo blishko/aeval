@@ -418,6 +418,44 @@ namespace ufo
         outs() << "\n    body: " << * hr.body << "\n";
       }
     }
+
+    void simplifyCHCSystemSyntactically() {
+      for (auto & chc : chcs) {
+        chc.body = simplifyExpressionSyntactically(chc.body);
+      }
+    }
+
+    Expr simplifyExpressionSyntactically(Expr e) {
+      Expr res = simplifyBool(e);
+      if (hasBV) {
+        return simplifyBVConstructs(res);
+      }
+      return res;
+    }
+
+    Expr simplifyBVConstructs(Expr e) {
+      std::map<Expr, unsigned> bitwidths;
+      RW<SimplifyBVExpr> rw (new SimplifyBVExpr(e->getFactory(), bitwidths));
+      return dagVisit(rw, e);
+    }
+
+//    bool translateToLIA() {
+//      bool success = true;
+//      for (auto & chc : chcs) {
+//        success = translateToLIA(chc);
+//        if (!success) return false;
+//      }
+//    }
+//
+//    bool translateToLIA(HornRuleExt const& chc) {
+//      HornRuleExt lia_chc;
+//      lia_chc.isQuery = chc.isQuery;
+//      lia_chc.isFact = chc.isFact;
+//      lia_chc.isInductive = chc.isInductive;
+//      Expr lia_body = bv2lia(chc.body);
+
+    }
   };
+
 }
 #endif

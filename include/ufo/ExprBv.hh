@@ -156,6 +156,8 @@ namespace expr
     NOP(BEXT_ROTATE_RIGHT,"bvextrotright",FUNCTIONAL,BvOp)
     NOP(INT2BV,"int2bv",FUNCTIONAL,BvOp)
     NOP(BV2INT,"bv2int",FUNCTIONAL,BvOp)
+    NOP(BV2BOOL,"bv2bool",FUNCTIONAL,BvOp)
+    NOP(BOOL2BV,"bool2bv",FUNCTIONAL,BvOp)
 
     namespace bv
     {
@@ -171,6 +173,8 @@ namespace expr
       inline Expr bvsgt (Expr f, Expr s) { return mk<BSGT> (f,s); }
       inline Expr bvsle (Expr f, Expr s) { return mk<BSLE> (f,s); }
       inline Expr bvslt (Expr f, Expr s) { return mk<BSLT> (f,s); }
+      inline Expr frombool(Expr f)       { return mk<BOOL2BV>(f); }
+      inline Expr tobool(Expr f);
 
       inline bool isBVComparison(Expr e) {
         return isOp<BvOp>(e) && (isOpX<BULT>(e) || isOpX<BULE>(e)
@@ -197,6 +201,11 @@ namespace expr
       
       inline Expr zext (Expr v, unsigned width) 
       {return mk<BZEXT> (v, bvsort (width, v->efac ()));}
+
+      inline Expr tobool(Expr e) {
+        if (isOpX<BOOL2BV>(e)) { return e->first(); }
+        return mk<BV2BOOL>(e);
+      }
       
     }
     

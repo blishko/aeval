@@ -619,8 +619,14 @@ namespace ufo
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
 //    ruleManager.print();
-//    exit(1);
+    ruleManager.simplifyCHCSystemSyntactically();
+//    outs() << "After simplofication:\n";
+//    ruleManager.print();
+
     NonlinCHCsolver nonlin(ruleManager);
+//    if (ruleManager.hasBV) {
+//      ruleManager.translateToLIA();
+//    }
     if (inv)
       nonlin.guessAndSolve();
     else

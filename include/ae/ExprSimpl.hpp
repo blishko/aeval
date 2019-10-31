@@ -8,6 +8,19 @@ using namespace std;
 using namespace boost;
 namespace ufo
 {
+  inline static bool hasBoolSort(Expr e)
+  {
+    if (bind::isBoolConst(e) || isOp<BoolOp>(e)) return true;
+    return false;
+  }
+
+  inline static bool isNumericConst(Expr e)
+  {
+    return isOpX<MPZ>(e) || isOpX<MPQ>(e);
+  }
+
+  static Expr mkNeg(Expr term);
+
   template<typename Range> static Expr conjoin(Range& conjs, ExprFactory &efac){
     return
     (conjs.size() == 0) ? mk<TRUE>(efac) :
@@ -857,7 +870,155 @@ namespace ufo
         return conjoin (newCnjs, efac);
       }
 
+      if (isOpX<ITE>(exp)) {
+        Expr cond = simplifyBool(exp->arg(0));
+        Expr br1 = hasBoolSort(exp->arg(1)) ? simplifyBool(exp->arg(1)) : exp->arg(1);
+        Expr br2 = hasBoolSort(exp->arg(2)) ? simplifyBool(exp->arg(2)) : exp->arg(2);
+        if (isOpX<TRUE>(cond)) return br1;
+        if (isOpX<FALSE>(cond)) return br2;
+
+        if (br1 == br2) return br1;
+
+        if (isOpX<TRUE>(br1) && isOpX<FALSE>(br2)) return cond;
+
+        if (isOpX<FALSE>(br1) && isOpX<TRUE>(br2)) return mk<NEG>(cond);
+        return mk<ITE>(cond, br1, br2);
+      }
+
       return exp;
+    }
+  };
+
+  struct SimplifyBVExpr
+  {
+    ExprFactory &efac;
+    std::map<Expr, unsigned>& bitwidths;
+
+    Expr zero;
+    Expr one;
+
+    SimplifyBVExpr (ExprFactory& _efac, std::map<Expr, unsigned>& bitwidths)
+      : efac(_efac), bitwidths(bitwidths)
+    {
+      zero = mkTerm (mpz_class (0), efac);
+      one = mkTerm (mpz_class(1), efac);
+    };
+
+    Expr operator() (Expr exp)
+    {
+      getBitWidth(exp);
+      if (isOpX<BEXTRACT>(exp)) {
+//        std::cout << *exp << std::endl;
+        if (bv::high(exp) == 0 && bv::low(exp)== 0)
+        {
+          Expr extractArg = exp->arg(2);
+          auto it = bitwidths.find(extractArg);
+          if (it != bitwidths.end() && it->second == 1) {
+            return extractArg;
+          }
+        }
+      }
+      if (isOpX<ITE>(exp))
+      {
+        auto it = bitwidths.find(exp);
+        if (it != bitwidths.end() && it->second == 1) {
+          Expr cond = exp->arg(0);
+          Expr br1 =  exp->arg(1);
+          Expr br2 =  exp->arg(2);
+          if (br1 == br2) return br1;
+
+          if (isOneBV(br1) && isZeroBV(br2)) {
+            Expr ret = bv::frombool(cond);
+            bitwidths[ret] = 1;
+            return ret;
+          }
+
+          if (isZeroBV(br1) && isOneBV(br2)) {
+            Expr ret = bv::frombool(mkNeg(cond));
+            bitwidths[ret] = 1;
+            return ret;
+          }
+          return exp;
+        }
+      }
+      if (isOpX<BNOT>(exp))
+      {
+        if (isOpX<BOOL2BV>(exp->first())) {
+          Expr ret = bv::frombool(mkNeg(exp->first()->first()));
+          bitwidths[ret] = 1;
+          return ret;
+        }
+        return exp;
+      }
+      if (isOpX<EQ>(exp) || isOpX<NEQ>(exp)) {
+        Expr left = exp->left();
+        Expr right = exp->right();
+        auto it = bitwidths.find(left);
+        if (it != bitwidths.end() && it->second == 1) {
+          assert(bitwidths.find(right) != bitwidths.end() && bitwidths.find(right)->second == 1);
+          if (isZeroBV(left) || isOneBV(left)) {
+            bool negative = (isOpX<EQ>(exp) ^ isOneBV(left));
+            Expr res = negative ? mkNeg(bv::tobool(right)) : bv::tobool(right);
+            return res;
+          }
+          if (isZeroBV(right) || isOneBV(right)) {
+            bool negative = (isOpX<EQ>(exp) ^ isOneBV(right));
+            Expr res = negative ? mkNeg(bv::tobool(left)) : bv::tobool(left);
+            return res;
+          }
+        }
+      }
+      return exp;
+    }
+
+  private:
+    bool isZeroBV(Expr e) { return bv::is_bvnum(e) && e->first() == zero; }
+    bool isOneBV(Expr e) { return bv::is_bvnum(e) && e->first() == one; }
+
+    void getBitWidth(Expr e) {
+//        std::cout << "Called for " << *e << std::endl;
+      if (bv::is_bvvar(e) || bv::is_bvnum(e)) {
+        Expr sort = e->right();
+        bitwidths[e] = bv::width(sort);
+        return;
+      }
+      if (bv::is_bvconst(e)) {
+        Expr sort = e->first()->right();
+        bitwidths[e] = bv::width(sort);
+        return;
+      }
+      if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)) // TODO: add all
+      {
+        Expr e1 = e->left();
+        Expr e2 = e->right();
+        assert(bitwidths.find(e1) != bitwidths.end()
+               && bitwidths.find(e2) != bitwidths.end()
+               && bitwidths[e1] == bitwidths[e2]);
+
+        bitwidths[e] = bitwidths[e1];
+      }
+      else if (isOpX<BNOT>(e)) {
+        Expr arg = e->first();
+        assert(bitwidths.find(arg) != bitwidths.end());
+        bitwidths[e] = bitwidths[arg];
+      }
+      else if (isOpX<BEXTRACT>(e)) {
+        auto h = bv::high(e);
+        auto l = bv::low(e);
+        assert(h >= l);
+        int res = h - l + 1;
+        bitwidths[e] = res;
+      }
+      else if (isOpX<ITE>(e)) {
+        Expr e1 = e->arg(1);
+        Expr e2 = e->arg(2);
+        if (bitwidths.find(e1) != bitwidths.end()
+            && bitwidths.find(e2) != bitwidths.end()
+            && bitwidths[e1] == bitwidths[e2])
+        {
+          bitwidths[e] = bitwidths[e1];
+        }
+      }
     }
   };
 
@@ -872,8 +1033,6 @@ namespace ufo
     RW<SimplifyBoolExpr> rw(new SimplifyBoolExpr(exp->getFactory()));
     return dagVisit (rw, exp);
   }
-
-  static Expr mkNeg(Expr term);
 
   inline static void simplBoolReplCnjHlp(ExprVector& hardVars, ExprSet& cnjs, ExprVector& facts, ExprVector& repls)
   {
@@ -1018,11 +1177,6 @@ namespace ufo
       if (res) v3.insert(var1);
     }
     return v3;
-  }
-
-  inline static bool isNumericConst(Expr e)
-  {
-    return isOpX<MPZ>(e) || isOpX<MPQ>(e);
   }
   
   template<typename Range> static int getVarIndex(Expr var, Range& vec)
@@ -1559,12 +1713,6 @@ namespace ufo
       return mkNeg(term->last());
     }
     return mk<NEG>(term);
-  }
-
-  inline static bool hasBoolSort(Expr e)
-  {
-    if (bind::isBoolConst(e) || isOp<BoolOp>(e)) return true;
-    return false;
   }
 
   inline static bool isNumeric(Expr a)
