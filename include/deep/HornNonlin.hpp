@@ -2,6 +2,7 @@
 #define HORNNONLIN__HPP__
 
 #include "ae/AeValSolver.hpp"
+#include "ufo/ExprTranslations.h"
 
 using namespace std;
 using namespace boost;
@@ -439,21 +440,25 @@ namespace ufo
       return dagVisit(rw, e);
     }
 
-//    bool translateToLIA() {
-//      bool success = true;
-//      for (auto & chc : chcs) {
-//        success = translateToLIA(chc);
-//        if (!success) return false;
-//      }
-//    }
-//
-//    bool translateToLIA(HornRuleExt const& chc) {
-//      HornRuleExt lia_chc;
-//      lia_chc.isQuery = chc.isQuery;
-//      lia_chc.isFact = chc.isFact;
-//      lia_chc.isInductive = chc.isInductive;
-//      Expr lia_body = bv2lia(chc.body);
+    bool translateToLIA() {
+      bool success = true;
+      for (auto & chc : chcs) {
+        success = translateToLIA(chc);
+        if (!success) return false;
+      }
+      return true;
+    }
 
+    bool translateToLIA(HornRuleExt const& chc) {
+      HornRuleExt lia_chc;
+      lia_chc.isQuery = chc.isQuery;
+      lia_chc.isFact = chc.isFact;
+      lia_chc.isInductive = chc.isInductive;
+      RW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator());
+      Expr lia_body = dagVisit(rw, chc.body);
+      std::cout << "Original body: " << *chc.body << std::endl;
+      std::cout << "Translated body: " << *lia_body << std::endl;
+      return true;
     }
   };
 
