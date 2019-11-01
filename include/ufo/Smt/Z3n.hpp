@@ -831,59 +831,60 @@ namespace ufo
     {
       for (Expr decl : fp.m_rels)
       {
-        out << fp.z3.toSmtLib (decl) << "\n";
-//        for (unsigned i = 0; i < bind::domainSz (decl); i++)
-//        {
-//          Expr ty = bind::domainTy (decl, i);
-//          if (isOpX<BOOL_TY> (ty)) out << "Bool ";
-//          else if (isOpX<REAL_TY> (ty)) out << "Real ";
-//          else if (isOpX<INT_TY> (ty)) out << "Int ";
-//          else if (isOpX<ARRAY_TY> (ty))
-//          {
-//            out << "(Array ";
-//            if (isOpX<INT_TY> (sort::arrayIndexTy (ty)))
-//            out << "Int ";
-//            else out << "UfoUnknownSort ";
-//            if (isOpX<INT_TY> (sort::arrayValTy (ty)))
-//            out << "Int";
-//            else out << "UfoUnknownSort";
-//            out << ") ";
-//          }
-//
-//          else out << "UfoUnknownSort ";
-//        }
-//        out << ") Bool)\n";
+//        out << fp.z3.toSmtLib (decl) << "\n";
+          out << "(declare-rel " << bind::name(decl) << " (";
+        for (unsigned i = 0; i < bind::domainSz (decl); i++)
+        {
+          Expr ty = bind::domainTy (decl, i);
+          if (isOpX<BOOL_TY> (ty)) out << "Bool ";
+          else if (isOpX<REAL_TY> (ty)) out << "Real ";
+          else if (isOpX<INT_TY> (ty)) out << "Int ";
+          else if (isOpX<ARRAY_TY> (ty))
+          {
+            out << "(Array ";
+            if (isOpX<INT_TY> (sort::arrayIndexTy (ty)))
+            out << "Int ";
+            else out << "UfoUnknownSort ";
+            if (isOpX<INT_TY> (sort::arrayValTy (ty)))
+            out << "Int";
+            else out << "UfoUnknownSort";
+            out << ") ";
+          }
+
+          else out << "UfoUnknownSort ";
+        }
+        out << "))\n";
       }
 
 
-//      for (const Expr &v : fp.getVars ())
-//      {
-//        assert (bind::IsConst() (v));
-//        out << "(declare-var " << fp.z3.toSmtLib (v) << " ";
-//        Expr ty = bind::typeOf (v);
-//        if (isOpX<BOOL_TY> (ty)) out << "Bool ";
-//        else if (isOpX<REAL_TY> (ty)) out << "Real ";
-//        else if (isOpX<INT_TY> (ty)) out << "Int ";
-//        else if (isOpX<ARRAY_TY> (ty))
-//        {
-//          out << "(Array ";
-//          if (isOpX<INT_TY> (sort::arrayIndexTy (ty)))
-//            out << "Int ";
-//          else out << "UfoUnknownSort ";
-//          if (isOpX<INT_TY> (sort::arrayValTy (ty)))
-//            out << "Int";
-//          else out << "UfoUnknownSort";
-//          out << ") ";
-//        }
-//        else out << "UfoUnknownSort ";
-//        out << ")\n";
-//      }
-//
-//      for (Expr &rule : fp.m_rules)
-//  out << "(rule " << fp.z3.toSmtLib (rule) << ")\n";
-//
-//      for (auto q: fp.m_queries)
-//  out << "(query " << fp.z3.toSmtLib (q) << ")\n";
+      for (const Expr &v : fp.getVars ())
+      {
+        assert (bind::IsConst() (v));
+        out << "(declare-var " << fp.z3.toSmtLib (v) << " ";
+        Expr ty = bind::typeOf (v);
+        if (isOpX<BOOL_TY> (ty)) out << "Bool ";
+        else if (isOpX<REAL_TY> (ty)) out << "Real ";
+        else if (isOpX<INT_TY> (ty)) out << "Int ";
+        else if (isOpX<ARRAY_TY> (ty))
+        {
+          out << "(Array ";
+          if (isOpX<INT_TY> (sort::arrayIndexTy (ty)))
+            out << "Int ";
+          else out << "UfoUnknownSort ";
+          if (isOpX<INT_TY> (sort::arrayValTy (ty)))
+            out << "Int";
+          else out << "UfoUnknownSort";
+          out << ") ";
+        }
+        else out << "UfoUnknownSort ";
+        out << ")\n";
+      }
+
+      for (Expr &rule : fp.m_rules)
+        out << "(rule " << fp.z3.toSmtLib (rule) << ")\n";
+
+      for (auto q: fp.m_queries)
+        out << "(query " << fp.z3.toSmtLib (q) << ")\n";
       return out;
     }
 

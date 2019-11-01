@@ -38,6 +38,8 @@ namespace expr {
 //        Expr f_branch = _bv2lia(e->arg(2));
 //        return mk<ITE>(cond, t_branch, f_branch);
 //      }
+        auto it = varMap.find(e);
+        if (it != varMap.end()) { return it->second; }
         if (isOpX<AND>(e) || isOpX<OR>(e) || isOpX<EQ>(e) || isOpX<NEQ>(e) || isOpX<ITE>(e)
 //            || bind::isFdecl<BOOL_TY>(e)
           )
@@ -48,19 +50,10 @@ namespace expr {
           Expr val = e->arg(0);
           return val;
         }
-        if (op::bv::is_bvconst(e)) {
-          Expr name = e->first()->first();
+        if (is_bvconst(e) || is_bvvar(e)) {
+          Expr name = is_bvconst(e) ? e->first()->first() : e->first();
 //          std::cout << "Name of var:" << *name << std::endl;
           Expr ret = bind::intConst(name);
-          assert(varMap.find(e) == varMap.end());
-          varMap[e] = ret;
-          return ret;
-        }
-        if (op::bv::is_bvvar(e)) {
-          Expr name = e->first();
-//          std::cout << "Name of var:" << *name << std::endl;
-          Expr ret = bind::intConst(name);
-          assert(varMap.find(e) == varMap.end());
           varMap[e] = ret;
           return ret;
         }
@@ -69,6 +62,10 @@ namespace expr {
         }
         if (isOpX<BSUB>(e)) {
           return mk<MINUS>(e->left(), e->right());
+        }
+        if (isOpX<BVSORT>(e)) {
+          unsigned int w = bv::width(e);
+          return w == 1 ? sort::boolTy(e->getFactory()) : sort::intTy(e->getFactory());
         }
 //        std::cout << "Case not covered yet: " << *e
 //        //<< " op is: " << e->op()

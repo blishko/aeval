@@ -420,6 +420,72 @@ namespace ufo
       }
     }
 
+    void dump(std::ostream& out)
+    {
+
+      // fixed-point object
+      ZFixedPoint<EZ3> fp (m_z3);
+      ZParams<EZ3> params (m_z3);
+      fp.set (params);
+
+      fp.registerRelation (bind::boolConstDecl(failDecl));
+
+      for (auto & dcl : decls) fp.registerRelation (dcl);
+      Expr errApp;
+
+      for (auto & r : chcs)
+      {
+        ExprSet allVars;
+        for (const auto& srcVars : r.srcVars) {
+          allVars.insert(srcVars.begin(), srcVars.end());
+        }
+        allVars.insert(r.dstVars.begin(), r.dstVars.end());
+        allVars.insert(r.locVars.begin(), r.locVars.end());
+
+        if (!r.isQuery)
+        {
+          for (auto & dcl : decls)
+          {
+            if (dcl->left() == r.dstRelation)
+            {
+              r.head = bind::fapp (dcl, r.dstVars);
+              break;
+            }
+          }
+        }
+        else
+        {
+          r.head = bind::fapp(bind::boolConstDecl(failDecl));
+          errApp = r.head;
+        }
+
+        ExprVector pres;
+        if (!r.isFact)
+        {
+          int counter = 0;
+          for (const auto srcRelation : r.srcRelations) {
+            for (auto & dcl : decls)
+            {
+              if (dcl->left() == srcRelation)
+              {
+                pres.push_back(bind::fapp (dcl, r.srcVars[counter]));
+                break;
+              }
+            }
+            ++counter;
+          }
+        }
+        else
+        {
+          pres.push_back(mk<TRUE>(m_efac));
+        }
+        pres.push_back(r.body);
+        fp.addRule(allVars, boolop::limp (mknary<AND>(pres), r.head));
+      }
+      fp.addQuery(bind::fapp(bind::fdecl(this->failDecl, ExprVector{sort::boolTy(m_efac)})));
+      out << fp << std::endl;
+    }
+
     void simplifyCHCSystemSyntactically() {
       for (auto & chc : chcs) {
         chc.body = simplifyExpressionSyntactically(chc.body);
@@ -439,28 +505,59 @@ namespace ufo
       RW<SimplifyBVExpr> rw (new SimplifyBVExpr(e->getFactory(), bitwidths));
       return dagVisit(rw, e);
     }
-
-    bool translateToLIA() {
-      bool success = true;
-      for (auto & chc : chcs) {
-        success = translateToLIA(chc);
-        if (!success) return false;
-      }
-      return true;
-    }
-
-    bool translateToLIA(HornRuleExt const& chc) {
-      HornRuleExt lia_chc;
-      lia_chc.isQuery = chc.isQuery;
-      lia_chc.isFact = chc.isFact;
-      lia_chc.isInductive = chc.isInductive;
-      RW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator());
-      Expr lia_body = dagVisit(rw, chc.body);
-      std::cout << "Original body: " << *chc.body << std::endl;
-      std::cout << "Translated body: " << *lia_body << std::endl;
-      return true;
-    }
   };
 
+  static inline HornRuleExt translateToLIA(HornRuleExt const& chc) {
+    HornRuleExt lia_chc;
+    lia_chc.isQuery = chc.isQuery;
+    lia_chc.isFact = chc.isFact;
+    lia_chc.isInductive = chc.isInductive;
+    RW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator());
+    Expr lia_body = dagVisit(rw, chc.body);
+//      std::cout << "Original body: " << *chc.body << std::endl;
+//      std::cout << "Translated body: " << *lia_body << std::endl;
+    lia_chc.body = lia_body;
+    lia_chc.dstRelation = dagVisit(rw, chc.dstRelation);
+    for (auto const & srcRelation : chc.srcRelations) {
+      lia_chc.srcRelations.push_back(dagVisit(rw, srcRelation));
+    }
+    lia_chc.head = dagVisit(rw, chc.head);
+    // vars
+    for (auto const& locVar : chc.locVars) {
+      lia_chc.locVars.push_back(dagVisit(rw, locVar));
+    }
+    for (auto const& dstVar : chc.dstVars) {
+      lia_chc.dstVars.push_back(dagVisit(rw, dstVar));
+    }
+    for (auto const& srcVars : chc.srcVars) {
+      ExprVector lia_srcVars;
+      for (auto const& srcVar : srcVars) {
+        lia_srcVars.push_back(dagVisit(rw, srcVar));
+      }
+      lia_chc.srcVars.push_back(lia_srcVars);
+    }
+    return lia_chc;
+  }
+
+  static inline CHCs translateToLIA(const CHCs& chc_manager) {
+    CHCs lia_chcs{chc_manager.m_efac, chc_manager.m_z3};
+    for (auto & chc : chc_manager.chcs) {
+      lia_chcs.chcs.push_back(translateToLIA(chc));
+    }
+    lia_chcs.failDecl = chc_manager.failDecl;
+    CompleteRW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator());
+    for (auto const & decl : chc_manager.decls) {
+      lia_chcs.decls.insert(dagVisit(rw, decl));
+    }
+    for (auto const& entry : chc_manager.invVars) {
+      Expr key = dagVisit(rw, entry.first);
+      ExprVector val;
+      for (auto const& v : entry.second) {
+        val.push_back(dagVisit(rw, v));
+      }
+      lia_chcs.invVars.insert(std::make_pair<>(key, val));
+    }
+    return lia_chcs;
+  }
 }
 #endif
