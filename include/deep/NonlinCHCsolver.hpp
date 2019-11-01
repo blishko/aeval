@@ -624,9 +624,18 @@ namespace ufo
 //    ruleManager.print();
 
     NonlinCHCsolver nonlin(ruleManager);
-//    if (ruleManager.hasBV) {
-//      ruleManager.translateToLIA();
-//    }
+    if (ruleManager.hasBV) {
+      auto liaRuleManager = translateToLIA(ruleManager);
+//      liaRuleManager.dump(std::cout);
+      auto solution = liaRuleManager.solve();
+      if (!solution.empty()) {
+        for (auto const& entry : solution) {
+          std::cout << "Solution in LIA found!\n";
+          std::cout << *entry.first << " - " << *entry.second << '\n';
+        }
+      }
+    }
+    exit(1);
     if (inv)
       nonlin.guessAndSolve();
     else

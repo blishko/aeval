@@ -420,9 +420,8 @@ namespace ufo
       }
     }
 
-    void dump(std::ostream& out)
-    {
 
+    ZFixedPoint<EZ3> toZ3fp() {
       // fixed-point object
       ZFixedPoint<EZ3> fp (m_z3);
       ZParams<EZ3> params (m_z3);
@@ -483,7 +482,34 @@ namespace ufo
         fp.addRule(allVars, boolop::limp (mknary<AND>(pres), r.head));
       }
       fp.addQuery(bind::fapp(bind::fdecl(this->failDecl, ExprVector{sort::boolTy(m_efac)})));
+      return fp;
+    }
+
+    void dump(std::ostream& out)
+    {
+      auto fp = toZ3fp();
       out << fp << std::endl;
+    }
+
+    std::map<Expr, Expr> solve() {
+      auto fp = toZ3fp();
+      tribool res;
+      try {
+        res = fp.query();
+      } catch (z3::exception &e){
+        outs() << "Z3 ex: " << e.msg() << "...\n";
+        exit(55);
+      }
+      std::map<Expr, Expr> solution;
+      if (!res) {
+        for (auto const &pred : decls) {
+          auto it = invVars.find(bind::name(pred));
+          assert(it != invVars.end());
+          Expr lemma = fp.getCoverDelta(bind::fapp(pred, it->second));
+          solution.insert(std::make_pair<>(pred, lemma));
+        }
+      }
+      return solution;
     }
 
     void simplifyCHCSystemSyntactically() {
@@ -547,6 +573,7 @@ namespace ufo
     lia_chcs.failDecl = chc_manager.failDecl;
     CompleteRW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator());
     for (auto const & decl : chc_manager.decls) {
+
       lia_chcs.decls.insert(dagVisit(rw, decl));
     }
     for (auto const& entry : chc_manager.invVars) {
