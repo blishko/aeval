@@ -2323,7 +2323,7 @@ namespace ufo
     else newCnjs.insert(mk<EQ>(key, value));
   }
 
-  template<typename Range> static Expr simpleQE(Expr exp, Range& quantified, bool removeUsed = true, bool strict = false)
+  template<typename Range> static Expr simpleQE(Expr exp, Range& quantified, bool removeUsed = true, bool strict = true)
   {
     // rewrite just equalities
     ExprSet cnjs;
@@ -2380,6 +2380,7 @@ namespace ufo
       if (toBreak) break;
     }
 
+    if (strict) return qed;
     newCnjs.clear();
     getConj(qed, newCnjs);
     for (auto & a : eqs)
@@ -2388,15 +2389,16 @@ namespace ufo
         newCnjs.insert(mk<EQ>(a.first, a.second));
     }
     qed = conjoin(newCnjs, exp->getFactory());
-    if (!strict) return qed;
-
-    // check if there are some not eliminated vars
-    ExprVector av;
-    filter (qed, bind::IsConst (), inserter(av, av.begin()));
-    if (emptyIntersect(av, quantified)) return qed;
-
-    // otherwise result is incomplete
-    return mk<TRUE>(exp->getFactory());
+    return qed;
+//    if (!strict) return qed;
+//
+//    // check if there are some not eliminated vars
+//    ExprVector av;
+//    filter (qed, bind::IsConst (), inserter(av, av.begin()));
+//    if (emptyIntersect(av, quantified)) return qed;
+//
+//    // otherwise result is incomplete
+//    return mk<TRUE>(exp->getFactory());
   }
 
   struct QESubexpr
