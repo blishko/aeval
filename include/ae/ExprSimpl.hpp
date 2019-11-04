@@ -6,6 +6,17 @@
 
 using namespace std;
 using namespace boost;
+
+namespace {
+  bool isAllZeroes(std::string const& str) {
+    return std::all_of(str.begin(), str.end(), [](char c){ return c == '0'; });
+  }
+
+  bool isAllOnes(std::string const& str) {
+    return std::all_of(str.begin(), str.end(), [](char c){ return c == '1'; });
+  }
+}
+
 namespace ufo
 {
   inline static bool hasBoolSort(Expr e)
@@ -922,8 +933,8 @@ namespace ufo
     Expr operator() (Expr exp)
     {
       getBitWidth(exp);
+//      std::cout << *exp << std::endl;
       if (isOpX<BEXTRACT>(exp)) {
-//        std::cout << *exp << std::endl;
         if (bv::high(exp) == 0 && bv::low(exp)== 0)
         {
           Expr extractArg = exp->arg(2);
@@ -935,13 +946,14 @@ namespace ufo
       }
       if (isOpX<ITE>(exp))
       {
+        Expr cond = exp->arg(0);
+        Expr br1 =  exp->arg(1);
+        Expr br2 =  exp->arg(2);
+        if (isOpX<TRUE>(cond)) return br1;
+        if (isOpX<FALSE>(cond)) return br2;
+        if (br1 == br2) return br1;
         auto it = bitwidths.find(exp);
         if (it != bitwidths.end() && it->second == 1) {
-          Expr cond = exp->arg(0);
-          Expr br1 =  exp->arg(1);
-          Expr br2 =  exp->arg(2);
-          if (br1 == br2) return br1;
-
           if (isOneBV(br1) && isZeroBV(br2)) {
             Expr ret = bv::frombool(cond);
             bitwidths[ret] = 1;
@@ -953,7 +965,15 @@ namespace ufo
             bitwidths[ret] = 1;
             return ret;
           }
-          return exp;
+          // Change the whole ite expression from bv[1] to bool
+//          std::cout << "Cond: " << *cond << '\n';
+//          std::cout << "Then: " << *br1 << '\n';
+//          std::cout << "Else: " << *br2 << std::endl;
+          Expr br1_new = bv::tobool(br1);
+          Expr br2_new = bv::tobool(br2);
+          Expr ret = bv::frombool(mk<ITE>(cond, br1_new, br2_new));
+          bitwidths[ret] = 1;
+          return ret;
         }
       }
       if (isOpX<BNOT>(exp))
@@ -980,6 +1000,50 @@ namespace ufo
             bool negative = (isOpX<EQ>(exp) ^ isOneBV(right));
             Expr res = negative ? mkNeg(bv::tobool(left)) : bv::tobool(left);
             return res;
+          }
+        }
+      }
+      if (isOpX<BOR>(exp))
+      {
+        auto it = bitwidths.find(exp);
+        if (it != bitwidths.end() && it->second == 1)
+        {
+          Expr left = exp->left();
+          Expr right = exp->right();
+          assert(bitwidths.find(left) != bitwidths.end() && bitwidths.find(left)->second == 1);
+          assert(bitwidths.find(right) != bitwidths.end() && bitwidths.find(right)->second == 1);
+          Expr res = bv::frombool(mk<OR>(bv::tobool(left), bv::tobool(right)));
+          bitwidths[res] = 1;
+          return res;
+        }
+        Expr left = exp->left();
+        Expr right = exp->right();
+        if (bv::is_bvnum(left) || bv::is_bvnum(right)) {
+          Expr constant = bv::is_bvnum(left) ? left : right;
+          Expr other = constant == left ? right : left;
+          if (isOpX<BCONCAT>(other)) {
+            Expr first = other->first();
+            Expr second = other->arg(1);
+            auto it1 = bitwidths.find(first);
+            auto it2 = bitwidths.find(second);
+            assert(it1 != bitwidths.end() && it2 != bitwidths.end());
+            int width1 = it1->second;
+            int width2 = it2->second;
+            // For now let's simplify only when the two parts of constant are either 0 or all 1s
+            auto it_const = bitwidths.find(constant);
+            assert( it_const != bitwidths.end() && it_const->second == width1 + width2);
+            int width = width1 + width2;
+            auto const_str = bv::constToBinary(constant);
+            auto str1 = const_str.substr(0, width1);
+            auto str2 = const_str.substr(width1, width2);
+            if ((isAllZeroes(str1) || isAllOnes(str1)) && (isAllZeroes(str2) || isAllOnes(str2))) {
+              Expr arg1_new = isAllZeroes(str1) ? first : bv::constFromBinary(str1, width1, exp->getFactory());
+              Expr arg2_new = isAllZeroes(str2) ? second : bv::constFromBinary(str2, width2, exp->getFactory());
+              Expr res = mk<BCONCAT>(arg1_new, arg2_new);
+//              std::cout << *res << std::endl;
+              bitwidths[res] = width;
+              return res;
+            }
           }
         }
       }
@@ -1032,6 +1096,20 @@ namespace ufo
             && bitwidths[e1] == bitwidths[e2])
         {
           bitwidths[e] = bitwidths[e1];
+        }
+      }
+      else if (isOpX<BCONCAT>(e)) {
+        assert(e->arity() == 2); // MB: Can be different?
+        Expr e1 = e->arg(0);
+        Expr e2 = e->arg(1);
+        auto it1 = bitwidths.find(e1);
+        auto it2 = bitwidths.find(e2);
+        assert(it1 != bitwidths.end() && it2 != bitwidths.end());
+        if (it1 != bitwidths.end()
+           && it2 != bitwidths.end()
+           )
+        {
+          bitwidths[e] = bitwidths[e1] + bitwidths[e2];
         }
       }
     }
@@ -1702,6 +1780,8 @@ namespace ufo
   
   inline static Expr mkNeg(Expr term)
   {
+    if (isOpX<TRUE>(term)) { return mk<FALSE>(term->getFactory()); }
+    if (isOpX<FALSE>(term)) { return mk<TRUE>(term->getFactory()); }
     if (isOpX<NEG>(term))
     {
       return term->arg(0);

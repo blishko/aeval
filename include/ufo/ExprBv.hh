@@ -111,6 +111,27 @@ namespace expr
         Expr sort = bvsort (width, v->efac ());
         return bind::mkConst (v, sort);
       }
+
+      inline std::string constToBinary(Expr c) {
+        assert (is_bvnum (c));
+        auto mpz = toMpz(c);
+        auto val = mpz.get_ui();
+        std::string r;
+        while(val!=0) {r=(val%2==0 ?"0":"1")+r; val/=2;}
+        return r;
+      }
+
+      inline Expr constFromBinary(std::string const& str, unsigned width, ExprFactory& fact) {
+        assert(str.size() == width);
+        if (str.size() != width) {
+          // TODO: take the "width" number of bits from str
+          throw std::logic_error("Not implemented yet!");
+        }
+        auto mpz = mpz_class(str, 2);
+        Expr val = mkTerm<mpz_class>(mpz, fact);
+        Expr c = bvConst(val, width);
+        return c;
+      }
       
       
     }
@@ -204,9 +225,15 @@ namespace expr
 
       inline Expr tobool(Expr e) {
         if (isOpX<BOOL2BV>(e)) { return e->first(); }
+        if (is_bvnum(e) && width(e->arg(1)) == 1)
+        {
+          Expr val = e->arg(0);
+          int ival = boost::lexical_cast<int>(val);
+          assert(ival == 0 || ival == 1);
+          return ival == 0 ? mk<FALSE>(e->getFactory()) : mk<TRUE>(e->getFactory());
+        }
         return mk<BV2BOOL>(e);
       }
-      
     }
     
     namespace bind
