@@ -1047,6 +1047,22 @@ namespace ufo
           }
         }
       }
+      {
+        Expr isZero = bv::toIsZero(exp);
+        if (isZero) {
+          assert(isOpX<EQ>(isZero) && isOpX<BEXTRACT>(isZero->left()));
+          Expr extr = isZero->left();
+          Expr arg = bv::earg(extr);
+          auto it = bitwidths.find(arg);
+          assert(it != bitwidths.end());
+          if (bv::width(isZero->right()->right()) == it->second) {
+            // extracting all bits -> just remove the extract
+            return mk<EQ>(arg, isZero->right());
+          }
+          return isZero;
+        }
+      }
+
       return exp;
     }
 

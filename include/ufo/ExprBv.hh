@@ -115,9 +115,7 @@ namespace expr
       inline std::string constToBinary(Expr c) {
         assert (is_bvnum (c));
         auto mpz = toMpz(c);
-        auto val = mpz.get_ui();
-        std::string r;
-        while(val!=0) {r=(val%2==0 ?"0":"1")+r; val/=2;}
+        std::string r = mpz.get_str(2);
         return r;
       }
 
@@ -232,7 +230,43 @@ namespace expr
           assert(ival == 0 || ival == 1);
           return ival == 0 ? mk<FALSE>(e->getFactory()) : mk<TRUE>(e->getFactory());
         }
+        if (isOpX<BNOT>(e)) {
+          return mk<NEG>(tobool(e->first()));
+        }
         return mk<BV2BOOL>(e);
+      }
+      
+      inline Expr toIsZero(Expr e) {
+//        std::cout << *e << std::endl;
+        bool topLevelCheck = isOpX<AND>(e) || (isOpX<NEG>(e) && isOpX<OR>(e->first()));
+        if (!topLevelCheck) { return nullptr; }
+        bool negated = isOpX<NEG>(e);
+        Expr root = negated ? e->first() : e;
+        Expr actualArg = nullptr;
+        std::vector<unsigned> indices;
+        for (auto it = root->args_begin(); it != root->args_end(); ++it) {
+          if (!negated && !isOpX<NEG>(*it)) { return nullptr; }
+          Expr child = negated ? *it : (*it)->first();
+          if (!isOpX<BV2BOOL>(child)) { return nullptr; }
+          child = child->first();
+          if (!isOpX<BEXTRACT>(child)) { return nullptr; }
+          if (actualArg == nullptr) { actualArg = earg(child); }
+          if (actualArg != earg(child)) {return nullptr; }
+          unsigned h = high(child);
+          unsigned l = low(child);
+          for (; l <= h; ++l) {
+            indices.push_back(l);
+          }
+        }
+        std::sort(indices.begin(), indices.end());
+        for (int i = 0; i < indices.size() - 1; ++i) {
+          if (indices[i+1] != indices[i] + 1) { return nullptr; }
+        }
+        // Indices are consecutive, it is just a check if the actualArg is 0!
+        Expr extr = extract(indices.back(), indices[0], actualArg);
+        int w = indices.back() - indices[0] + 1;
+        Expr res = mk<EQ>(extr, bvnum(mkTerm<mpz_class>(mpz_class(0), e->getFactory()), bvsort(w, e->getFactory())));
+        return res;
       }
     }
     
