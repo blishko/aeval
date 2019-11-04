@@ -907,7 +907,7 @@ namespace ufo
 
         if (isOpX<TRUE>(br1) && isOpX<FALSE>(br2)) return cond;
 
-        if (isOpX<FALSE>(br1) && isOpX<TRUE>(br2)) return mk<NEG>(cond);
+        if (isOpX<FALSE>(br1) && isOpX<TRUE>(br2)) return mkNeg(cond);
         return mk<ITE>(cond, br1, br2);
       }
 
@@ -960,6 +960,17 @@ namespace ufo
             return ret;
           }
 
+          if (isZeroBV(br1)) {
+            Expr ret = nullptr;
+            if (isOneBV(br2)) {
+              ret = bv::frombool(mkNeg(cond));
+            }
+            else {
+              ret = bv::frombool(mk<AND>(mkNeg(cond), bv::tobool(br2)));
+            }
+            bitwidths[ret] = 1;
+            return ret;
+          }
           if (isZeroBV(br1) && isOneBV(br2)) {
             Expr ret = bv::frombool(mkNeg(cond));
             bitwidths[ret] = 1;
