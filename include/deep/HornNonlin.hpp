@@ -390,6 +390,88 @@ namespace ufo
       return replaceAll(res, hr.dstVars, vars);
     }
 
+    void slice (HornRuleExt* hr, vector<int>& varInds)
+    {
+      ExprSet cnjs;
+      getConj(hr->body, cnjs);
+      ExprSet newCnjs = cnjs;
+      vector<ExprSet> deps;
+      ExprSet vars;
+      for (auto & i : varInds) vars.insert(hr->dstVars[i]);
+      deps.push_back(vars);
+
+      while (true)
+      {
+        ExprSet tmp;
+        for (auto it = cnjs.begin(); it != cnjs.end(); )
+        {
+          Expr c = *it;
+          if (emptyIntersect(c, deps.back()))
+          {
+            ++it;
+          }
+          else
+          {
+            filter (*it, bind::IsConst (), inserter(tmp, tmp.begin()));
+            it = cnjs.erase(it);
+          }
+        }
+        if (tmp.empty()) break;
+        tmp.insert(deps.back().begin(), deps.back().end());
+        deps.push_back(tmp);
+      }
+
+      for (auto & a : cnjs) newCnjs.erase(a);
+      hr->body = conjoin(newCnjs, m_efac);
+    }
+
+    void reCalculateIndexes(Expr r, vector<int>& varInds, ExprSet& vars)
+    {
+      for (auto & v : vars)
+      {
+        for (int i = 0; i < invVars[r].size(); i++)
+        {
+          if (invVars[r][i] == v)
+          {
+            varInds.push_back(i);
+            break;
+          }
+        }
+      }
+    }
+
+    void slice (Expr decl, vector<int>& varInds)
+    {
+      for (int i = incms[decl].size() - 1; i >= 0; i--)
+      {
+        HornRuleExt* hr = &chcs[i];
+        if (varInds.empty())
+        {
+          ExprSet vars;
+          filter (hr->body, bind::IsConst(), std::inserter (vars, vars.begin ()));
+          for (auto & r : hr->srcRelations)
+          {
+            reCalculateIndexes(r, varInds, vars);
+            slice(r, varInds);
+          }
+        }
+        else
+        {
+          // one level only, for now; to extend
+          slice(hr, varInds);
+          ExprSet vars;
+          filter (hr->body, bind::IsConst(), std::inserter (vars, vars.begin ()));
+          reCalculateIndexes(decl, varInds, vars);
+        }
+      }
+    }
+
+    void slice ()
+    {
+      vector<int> varInds;
+      slice(failDecl, varInds);
+    }
+
     void print()
     {
       outs() << "CHCs:\n";
