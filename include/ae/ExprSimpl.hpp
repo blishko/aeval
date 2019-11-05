@@ -971,15 +971,17 @@ namespace ufo
             bitwidths[ret] = 1;
             return ret;
           }
-          if (isZeroBV(br1) && isOneBV(br2)) {
-            Expr ret = bv::frombool(mkNeg(cond));
+          if (isZeroBV(br2)) {
+            Expr ret = nullptr;
+            if (isOneBV(br1)) {
+              ret = bv::frombool(cond);
+            }
+            else {
+              ret = bv::frombool(mk<AND>(cond, bv::tobool(br1)));
+            }
             bitwidths[ret] = 1;
             return ret;
           }
-          // Change the whole ite expression from bv[1] to bool
-//          std::cout << "Cond: " << *cond << '\n';
-//          std::cout << "Then: " << *br1 << '\n';
-//          std::cout << "Else: " << *br2 << std::endl;
           Expr br1_new = bv::tobool(br1);
           Expr br2_new = bv::tobool(br2);
           Expr ret = bv::frombool(mk<ITE>(cond, br1_new, br2_new));
