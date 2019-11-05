@@ -127,7 +127,7 @@ namespace expr
         }
         auto mpz = mpz_class(str, 2);
         Expr val = mkTerm<mpz_class>(mpz, fact);
-        Expr c = bvConst(val, width);
+        Expr c = bvnum(val, bvsort(width, fact));
         return c;
       }
       
