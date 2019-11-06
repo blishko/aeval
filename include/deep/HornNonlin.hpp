@@ -393,34 +393,75 @@ namespace ufo
     {
       ExprSet cnjs;
       getConj(hr->body, cnjs);
-      ExprSet newCnjs = cnjs;
-      vector<ExprSet> deps;
-      ExprSet vars;
-      for (auto & i : varInds) vars.insert(hr->dstVars[i]);
-      deps.push_back(vars);
+      ExprSet newCnjs; // = cnjs;
+      ExprSet deps;
+      for (auto & i : varInds) deps.insert(hr->dstVars[i]);
 
       while (true)
       {
         ExprSet tmp;
-        for (auto it = cnjs.begin(); it != cnjs.end(); )
+        for (auto it = cnjs.begin(); it != cnjs.end(); ++it)
         {
           Expr c = *it;
-          if (emptyIntersect(c, deps.back()))
+          ExprSet vars0;
+          filter (*it, bind::IsConst (), inserter(vars0, vars0.begin()));
+          ExprSet vars1 = minusSets(vars0, deps);       // independent vars
+
+          ExprSet vars3; // primed vars
+          for (auto & a : vars0)
+            if (find(hr->dstVars.begin(), hr->dstVars.end(), a) != hr->dstVars.end())
+              vars3.insert(a);
+
+          if (vars3.size() == 0)
           {
-            ++it;
+            tmp.insert(c);
+            continue;
           }
-          else
+
+          if (vars0.size() == vars1.size())
+            continue;
+
+          if (vars1.empty())
           {
-            filter (*it, bind::IsConst (), inserter(tmp, tmp.begin()));
-            it = cnjs.erase(it);
+            tmp.insert(c);
+            continue;
+          }
+
+          ExprSet vars4; // unprimed vars
+          ExprSet vars5; // primed vars
+          for (auto & a : vars1)
+            if (find(hr->dstVars.begin(), hr->dstVars.end(), a) == hr->dstVars.end())
+              vars4.insert(a);
+            else
+              vars5.insert(a);
+
+          if (vars5.size() != vars3.size())
+          {
+            tmp.insert(c);
+            continue;
+          }
+
+          if (vars5.size() == 0)
+          {
+            tmp.insert(c);
+            continue;
           }
         }
-        if (tmp.empty()) break;
-        tmp.insert(deps.back().begin(), deps.back().end());
-        deps.push_back(tmp);
+        newCnjs.insert(tmp.begin(), tmp.end());
+        ExprSet deps2;
+        filter (conjoin(newCnjs, m_efac), bind::IsConst (), inserter(deps2, deps2.begin()));
+
+        for (auto & a : deps2)
+          for (int i = 0; i < hr->srcVars.size(); i++)
+            if (hr->dstRelation == hr->srcRelations[i])
+              for (int j = 0; j < hr->srcVars[i].size(); j++)
+                if (hr->srcVars[i][j] == a)
+                  deps2.insert(hr->dstVars[j]);
+
+        if (deps2.size() == deps.size()) break;
+        deps = deps2;
       }
 
-      for (auto & a : cnjs) newCnjs.erase(a);
       hr->body = conjoin(newCnjs, m_efac);
     }
 
