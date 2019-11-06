@@ -839,6 +839,10 @@ namespace ufo
           if (isOpX<BOOL_TY> (ty)) out << "Bool ";
           else if (isOpX<REAL_TY> (ty)) out << "Real ";
           else if (isOpX<INT_TY> (ty)) out << "Int ";
+          else if (isOpX<BVSORT> (ty))
+          {
+            out << "(_ BitVec " << bv::width(ty) << ") ";
+          }
           else if (isOpX<ARRAY_TY> (ty))
           {
             out << "(Array ";
@@ -865,6 +869,10 @@ namespace ufo
         if (isOpX<BOOL_TY> (ty)) out << "Bool ";
         else if (isOpX<REAL_TY> (ty)) out << "Real ";
         else if (isOpX<INT_TY> (ty)) out << "Int ";
+        else if (isOpX<BVSORT> (ty))
+        {
+          out << "(_ BitVec " << bv::width(ty) << ") ";
+        }
         else if (isOpX<ARRAY_TY> (ty))
         {
           out << "(Array ";
