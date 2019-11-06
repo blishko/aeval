@@ -180,7 +180,6 @@ namespace ufo
       m_fp.reset (new ZFixedPoint<EZ3> (m_z3));
       ZFixedPoint<EZ3> &fp = *m_fp;
       fp.loadFPfromFile(smt);
-
       for (auto &r: fp.m_rules)
       {
         bool toReplace = false;
@@ -444,7 +443,7 @@ namespace ufo
     {
       for (int i = incms[decl].size() - 1; i >= 0; i--)
       {
-        HornRuleExt* hr = &chcs[i];
+        HornRuleExt* hr = &chcs[incms[decl][i]];
         if (varInds.empty())
         {
           ExprSet vars;
@@ -472,7 +471,7 @@ namespace ufo
       slice(failDecl, varInds);
     }
 
-    void print()
+    void print() const
     {
       outs() << "CHCs:\n";
       for (auto &hr: chcs){
@@ -561,6 +560,7 @@ namespace ufo
           pres.push_back(mk<TRUE>(m_efac));
         }
         pres.push_back(r.body);
+        assert(isOpX<FAPP>(r.head));
         fp.addRule(allVars, boolop::limp (mknary<AND>(pres), r.head));
       }
       fp.addQuery(bind::fapp(bind::fdecl(this->failDecl, ExprVector{sort::boolTy(m_efac)})));
