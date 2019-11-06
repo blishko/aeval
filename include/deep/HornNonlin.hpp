@@ -614,16 +614,26 @@ namespace ufo
       out << fp << std::endl;
     }
 
-    std::map<Expr, Expr> solve() {
+    std::map<Expr, Expr> solve(unsigned timeout = 0u) {
       auto fp = toZ3fp();
+      ZParams<EZ3> params (m_z3);
+      params.set("timeout", timeout);
+      fp.set (params);
       tribool res;
+      std::map<Expr, Expr> solution;
       try {
         res = fp.query();
       } catch (z3::exception &e){
-        outs() << "Z3 ex: " << e.msg() << "...\n";
-        exit(55);
+        std::string msg = e.msg();
+        if (msg.find("canceled") == std::string::npos) {
+          outs() << "Z3 ex: " << e.msg() << "...\n";
+          exit(55);
+        }
+        else {
+          // timeout
+          return solution;
+        }
       }
-      std::map<Expr, Expr> solution;
       if (!res) {
         for (auto const &pred : decls) {
           auto it = invVars.find(bind::name(pred));
