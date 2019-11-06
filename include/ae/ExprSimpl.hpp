@@ -915,6 +915,18 @@ namespace ufo
     }
   };
 
+  static inline Expr concatConstants(Expr f, Expr s) {
+    assert(bv::is_bvnum(f));
+    assert(bv::is_bvnum(s));
+    std::string f_str = bv::constToBinary(f);
+    std::string s_str = bv::constToBinary(s);
+    assert(bv::width(f->right()) == f_str.size());
+    assert(bv::width(s->right()) == s_str.size());
+    std::string res_str = f_str + s_str;
+    Expr res = bv::constFromBinary(res_str, res_str.size(), f->getFactory());
+    return res;
+  }
+
   struct SimplifyBVExpr
   {
     ExprFactory &efac;
@@ -1057,6 +1069,43 @@ namespace ufo
               bitwidths[res] = width;
               return res;
             }
+          }
+        }
+      }
+      if (isOpX<BCONCAT>(exp)) {
+        Expr first = exp->first();
+        Expr second = exp->arg(1);
+        const bool isFirstConstant = bv::is_bvnum(first);
+        const bool isSecondConstant = bv::is_bvnum(second);
+        if ( isFirstConstant || isSecondConstant ) {
+          if (isFirstConstant && isSecondConstant) {
+            Expr res = concatConstants(first, second);
+            bitwidths[res] = bitwidths.at(first) + bitwidths.at(second);
+            return res;
+          }
+          Expr constant = bv::is_bvnum(first) ? first : second;
+          Expr other = bv::is_bvnum(first) ? second : first;
+          if (isOpX<ITE>(other)) {
+            // FOR now simplify only if ite returns constant
+            bool returnsConstant = bv::is_bvnum(other->arg(1)) && bv::is_bvnum(other->arg(2));
+            if (returnsConstant) {
+              // propagate concatenation of constant inside ite
+              Expr n_then = isFirstConstant ? concatConstants(constant, other->arg(1)) : concatConstants(other->arg(1), constant);
+              Expr n_else = isFirstConstant ? concatConstants(constant, other->arg(2)) : concatConstants(other->arg(2), constant);
+              Expr res = mk<ITE>(other->first(), n_then, n_else);
+              bitwidths[res] = bitwidths.at(other) + bitwidths.at(constant);
+              return res;
+            }
+          }
+          if (isOpX<BOOL2BV>(other)) {
+            Expr bvone = bv::bvnum(one, bv::bvsort(1, one->getFactory()));
+            Expr bvzero = bv::bvnum(zero, bv::bvsort(1, zero->getFactory()));
+            Expr n_then = isFirstConstant ? concatConstants(constant, bvone) : concatConstants(bvone, constant);
+            Expr n_else = isFirstConstant ? concatConstants(constant, bvzero) : concatConstants(bvzero, constant);
+            Expr res = mk<ITE>(other->first(), n_then, n_else);
+            assert(bitwidths.at(other) == 1);
+            bitwidths[res] = bitwidths.at(other) + bitwidths.at(constant);
+            return res;
           }
         }
       }

@@ -114,8 +114,13 @@ namespace expr
 
       inline std::string constToBinary(Expr c) {
         assert (is_bvnum (c));
+        unsigned width = bv::width(c->right());
         auto mpz = toMpz(c);
         std::string r = mpz.get_str(2);
+        // add leading zeroes if necessary get the full width
+        if (r.size() < width) {
+          r = std::string((width - r.size()), '0') + r;
+        }
         return r;
       }
 

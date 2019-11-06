@@ -117,9 +117,14 @@ namespace ufo {
     public:
       BV1ToBoolRewrite(const std::map<Expr,Expr>& subMap) : subMap{subMap} {}
       VisitAction operator()(Expr e) {
-        // TODO: write!
-        if (isOpX<BV2BOOL>(e) && has(e->first())) {
-          return VisitAction::changeTo(subMap.at(e->first()));
+        if (isOpX<BV2BOOL>(e)) {
+          if (has(e->first())) {
+            return VisitAction::changeTo(subMap.at(e->first()));
+          }
+          // rewrite BV2BOOL(x) back to x == 1;
+          Expr res = mk<EQ>(e->first(),
+              bv::bvnum(mkTerm (mpz_class (1), e->getFactory()), bv::bvsort(1, e->getFactory())));
+          return VisitAction::changeDoKids(res);
         }
         if (isOpX<EQ>(e)) {
           Expr lhs = e->left();
