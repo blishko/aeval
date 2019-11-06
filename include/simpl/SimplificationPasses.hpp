@@ -22,9 +22,35 @@ namespace ufo {
 
     struct BV1ToBool {
     private:
+      // Variable mapping
+      using subs_t = std::map<Expr, Expr>;
+      subs_t substitutionMap;
       static Expr rewrite(Expr expr, const std::map<Expr, Expr>& subMap);
     public:
+      struct InvariantTranslation {
+      private:
+        std::map<Expr, Expr> backSubMap;
+      public:
+        InvariantTranslation(const subs_t& originalMap) {
+          for(const auto& entry : originalMap) {
+            backSubMap.insert(std::make_pair(entry.second, entry.first));
+          }
+        }
+
+        std::map<Expr, Expr> getOriginalSolution(const std::map<Expr, Expr>& translatedSolution) {
+          subs_t res;
+          for (auto const& entry : translatedSolution) {
+            res.insert(std::make_pair(entry.first, replace(entry.second, backSubMap)));
+          }
+          return res;
+        }
+      };
+
       std::unique_ptr<CHCs> res;
+
+      InvariantTranslation getInvariantTranslation() const {
+        return InvariantTranslation(substitutionMap);
+      }
 
       CHCs* getCHCs() const { return res.get(); }
 
@@ -47,15 +73,16 @@ namespace ufo {
 //        }
 //        std::cout << std::endl;
         // create a boolean version for the variables and remember the mapping
-        std::map<Expr, Expr> subMap;
+        this->substitutionMap.clear();
         for (Expr bv1var: bv1vars) {
           Expr sub = bind::boolConst(mkTerm<std::string>(lexical_cast<string>(bv1var), bv1var->getFactory()));
-          subMap[bv1var] = sub;
+          this->substitutionMap[bv1var] = sub;
         }
         // replace the variables in all CHCs
         std::map<Expr, Expr> sort_replacement;
         auto& factory = res->m_efac;
         sort_replacement[bv::bvsort(1,factory)] = mk<BOOL_TY>(factory);
+        const auto& subMap = this->substitutionMap;
         auto varReplace = [&subMap](Expr e) { return replace(e, subMap);};
         for (auto& chc : res->chcs) {
           chc.body = this->rewrite(chc.body, subMap);
