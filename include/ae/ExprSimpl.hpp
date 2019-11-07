@@ -926,6 +926,17 @@ namespace ufo
     Expr res = bv::constFromBinary(res_str, res_str.size(), f->getFactory());
     return res;
   }
+  template<typename Range>
+  static inline Expr concatConstants(const Range& r) {
+    std::vector<std::string> strs;
+    std::transform(std::begin(r), std::end(r), std::back_inserter(strs),
+        [](Expr e) {return bv::constToBinary(e); });
+    std::string res_str = "";
+    for (auto const& s : strs) { res_str.append(s); }
+    assert(!res_str.empty());
+    Expr res = bv::constFromBinary(res_str, res_str.size(), (*std::begin(r))->getFactory());
+    return res;
+  }
 
   struct SimplifyBVExpr
   {
@@ -1016,14 +1027,13 @@ namespace ufo
         auto it = bitwidths.find(left);
         if (it != bitwidths.end() && it->second == 1) {
           assert(bitwidths.find(right) != bitwidths.end() && bitwidths.find(right)->second == 1);
-          if (isZeroBV(left) || isOneBV(left)) {
-            bool negative = (isOpX<EQ>(exp) ^ isOneBV(left));
-            Expr res = negative ? mkNeg(bv::tobool(right)) : bv::tobool(right);
-            return res;
-          }
-          if (isZeroBV(right) || isOneBV(right)) {
-            bool negative = (isOpX<EQ>(exp) ^ isOneBV(right));
-            Expr res = negative ? mkNeg(bv::tobool(left)) : bv::tobool(left);
+          const bool isLeftConstant = bv::is_bvnum(left);
+          const bool isRightConstant = bv::is_bvnum(right);
+          if (isLeftConstant || isRightConstant) {
+            Expr constant = isLeftConstant ? left : right;
+            Expr other = isLeftConstant ? right : left;
+            bool negative = (isOpX<EQ>(exp) ^ isOneBV(constant));
+            Expr res = negative ? mkNeg(bv::tobool(other)) : bv::tobool(other);
             return res;
           }
         }
@@ -1107,6 +1117,79 @@ namespace ufo
             bitwidths[res] = bitwidths.at(other) + bitwidths.at(constant);
             return res;
           }
+        }
+      }
+      if (isOpX<AND>(exp)) {
+        ExprSet conjuncts;
+        getConj(exp, conjuncts);
+        ExprVector conjVec(conjuncts.begin(), conjuncts.end());
+        auto beg = std::begin(conjVec);
+        auto end = std::end(conjVec);
+        auto boundary = std::partition(beg, end, [](Expr e) {
+          if (!isOpX<EQ>(e)) return false;
+          Expr lhs = e->left();
+          Expr rhs = e->right();
+          const bool isLeftExtract = isOpX<BEXTRACT>(lhs);
+          const bool isRightExtract = isOpX<BEXTRACT>(rhs);
+          if (!isLeftExtract && !isRightExtract) { return false; }
+          const bool isLeftConst = bv::is_bvnum(lhs);
+          const bool isRightConst = bv::is_bvnum(rhs);
+          if (!isLeftConst && !isRightConst) { return false; }
+          return true;
+        });
+        if (std::distance(beg, boundary) > 1) {
+          // There is hope to join extracts only if there is more than one
+          std::map<Expr, std::vector<std::pair<Expr, Expr>>> varToExtracts;
+          for (auto it = beg; it != boundary; ++it) {
+            Expr conjunct = *it;
+            const bool isLeftExtract = isOpX<BEXTRACT>(conjunct->left());
+            Expr extract = isLeftExtract ? conjunct->left() : conjunct->right();
+            Expr constant = isLeftExtract ? conjunct->right() : conjunct->left();
+            Expr extr_arg = extract->arg(2);
+            varToExtracts[extr_arg].emplace_back(extract, constant);
+          }
+          ExprVector res;
+          for (auto& entry : varToExtracts) {
+            if (entry.second.size() > 1) {
+              // we can hope to simplify it here
+              auto& args = entry.second;
+              std::sort(args.begin(), args.end(),
+                  [](std::pair<Expr,Expr> const& p1, std::pair<Expr,Expr> const& p2)
+                  {
+                    return bv::high(p2.first) < bv::high(p1.first);
+                  });
+              const bool isConsecutive = [](std::vector<std::pair<Expr, Expr>> const& v) {
+                  for (int i = 0; i < v.size() - 1; ++i) {
+                    if (bv::high(v[i+1].first) != bv::low(v[i].first) - 1) { return false; }
+                  }
+                  return true;
+                }(args);
+              if (isConsecutive) {
+                Expr n_lhs = bv::extract(bv::high(args[0].first), bv::low(args.back().first), entry.first);
+                if (bv::low(n_lhs) == 0 && bv::high(n_lhs) == bitwidths[entry.first] - 1) {
+                  n_lhs = entry.first;
+                }
+                ExprVector constants;
+                std::transform(args.begin(), args.end(), std::back_inserter(constants),
+                    [](std::pair<Expr, Expr> const& p){ return p.second; });
+                Expr n_rhs = concatConstants(constants);
+                res.push_back(mk<EQ>(n_lhs, n_rhs));
+              }
+              else {
+                for (auto const& pair : args) {
+                  res.push_back(mk<EQ>(pair.first, pair.second));
+                }
+              }
+            }
+            else {
+              assert(!entry.second.empty());
+              auto const& pair = entry.second[0];
+              res.push_back(mk<EQ>(pair.first, pair.second));
+            }
+          }
+          res.insert(res.end(), boundary, end);
+          Expr ret = conjoin(res, exp->getFactory());
+          return ret;
         }
       }
       {
