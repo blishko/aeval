@@ -247,9 +247,34 @@ namespace ufo {
     };
 
     struct BV2LIAPass {
+      using inv_t = std::map<Expr, Expr>;
+      using subs_t = std::map<Expr, Expr>;
+
+      struct InvariantTranslator {
+        InvariantTranslator(subs_t variableMap, subs_t declsMap) :
+          variableMap{std::move(variableMap)},
+          declsMap{std::move(declsMap)}
+        {}
+
+        inv_t translateInvariant(inv_t const& inv);
+      private:
+        std::map<Expr, Expr> variableMap;
+        std::map<Expr, Expr> declsMap;
+
+        Expr translateRecursively(Expr exp);
+
+        static Expr translateOperation(Expr original, ExprVector n_args);
+
+        int computeExpressionBitWidth(Expr e);
+      };
+      // Actual methods of BV2LIAPass
+
       void operator()(const CHCs & system);
 
       CHCs* getTransformed() { return transformed.get(); }
+
+      InvariantTranslator getInvariantTranslator() const;
+
     private:
       std::unique_ptr<CHCs> transformed;
 
@@ -406,6 +431,143 @@ namespace ufo {
       }
       return res;
     }
+
+    BV2LIAPass::InvariantTranslator BV2LIAPass::getInvariantTranslator() const {
+      subs_t invertedDeclsMap;
+      for (auto const& entry : this->declsMap) {
+        invertedDeclsMap.insert(std::make_pair(entry.second, entry.first));
+      }
+      subs_t invertedVariableMap;
+      for (auto const& entry : this->variableMap) {
+        invertedVariableMap.insert(std::make_pair(entry.second, entry.first));
+      }
+      return BV2LIAPass::InvariantTranslator(std::move(invertedVariableMap), std::move(invertedDeclsMap));
+    }
+
+    BV2LIAPass::inv_t BV2LIAPass::InvariantTranslator::translateInvariant(const ufo::passes::BV2LIAPass::inv_t &inv) {
+      BV2LIAPass::inv_t res;
+      for (auto const& entry : inv) {
+        Expr predicate = entry.first;
+        assert(bind::isFdecl(predicate));
+        auto it = declsMap.find(predicate);
+        assert(it != declsMap.end());
+        Expr translatedPredicate = it->second;
+        Expr interpretation = entry.second;
+        Expr translatedInterpretation = translateRecursively(interpretation);
+        res.insert(std::make_pair(translatedPredicate, translatedInterpretation));
+      }
+      return res;
+    }
+
+    Expr BV2LIAPass::InvariantTranslator::translateRecursively(expr::Expr exp) {
+      if (isOpX<AND>(exp) || isOpX<OR>(exp)) {
+        ExprVector n_args;
+        for (auto it = exp->args_begin(); it != exp->args_end(); ++it) {
+          n_args.push_back(translateRecursively(*it));
+        }
+        return isOpX<AND>(exp) ? conjoin(n_args, exp->getFactory()) : disjoin(n_args, exp->getFactory());
+      }
+      if (isOpX<NEG>(exp)) {
+        return mkNeg(translateRecursively(exp->first()));
+      }
+      if (isOp<ComparissonOp>(exp) || isOp<NumericOp>(exp)) {
+        auto isConstant = bind::IsHardIntConst{};
+        bool hasConstant = std::any_of(exp->args_begin(), exp->args_end(), isConstant);
+        int opBitWidth = hasConstant ? computeExpressionBitWidth(exp) : 1; // 0 means unknown
+        // If it does not contain constant, we don't care about the bitwidth
+        assert(opBitWidth != 0);
+        ExprVector n_args;
+        for (auto it = exp->args_begin(); it != exp->args_end(); ++it) {
+          Expr arg = *it;
+          if (isConstant(arg)) {
+            Expr n_const = bv::bvnum(arg, bv::bvsort(opBitWidth, exp->getFactory()));
+            n_args.push_back(n_const);
+          }
+          else {
+            n_args.push_back(translateRecursively(arg));
+          }
+        }
+        Expr res = translateOperation(exp, n_args);
+        return res;
+      }
+      if (bind::isBoolConst(exp)) {
+         return exp;
+      }
+//      if (bind::isIntConst(exp)) {
+        auto it = this->variableMap.find(exp);
+        if (it != variableMap.end()) {
+          return it->second;
+        }
+//      }
+
+      std::cerr << "Unhandled case when translating LIA invariant to BV: " << *exp << std::endl;
+      assert(false);
+      throw std::logic_error("Unhandled case when translating LIA invariant to BV");
+    }
+
+    int BV2LIAPass::InvariantTranslator::computeExpressionBitWidth(Expr exp) {
+      // MB: Apparently, the Integer variables are represented using BIND of String terminal and Simpe Type INT
+      // This may originated already in our translation and needs to be checked!
+
+      auto it = variableMap.find(exp);
+      if (it != variableMap.end()) {
+        Expr bvVar = it->second;
+        assert(bind::isFapp(bvVar));
+        Expr sort = bind::rangeTy(bvVar->first());
+        return bv::width(sort);
+      }
+      if (bind::IsHardIntConst{}(exp)) {
+        return 0; // = UNKNOWN
+      }
+      if (isOp<ComparissonOp>(exp) || isOp<NumericOp>(exp)) {
+        auto it = exp->args_begin();
+        auto end = exp->args_end();
+        int res = 0;
+        while (it != end) {
+          res = computeExpressionBitWidth(*it);
+          if (res != 0) { return res; }
+        }
+        return 0; // UNKNOWN
+      }
+      if (isOpX<ITE>(exp)) {
+        int res = 0;
+        Expr then_exp = exp->arg(1);
+        res = computeExpressionBitWidth(then_exp);
+        if (res != 0) { return res; }
+        Expr else_exp = exp->arg(2);
+        res = computeExpressionBitWidth(else_exp);
+        return res;
+      }
+
+      std::cerr << "Case not covered when computing bitwidth of an operation " << *exp << std::endl;
+      assert(false);
+      throw std::logic_error("Case not covered when bitwidth of an operation for translation from LIA to BV");
+    }
+
+    Expr BV2LIAPass::InvariantTranslator::translateOperation(Expr e, ExprVector n_args) {
+      if (isOpX<EQ>(e)) { return mknary<EQ>(n_args); }
+
+      if (isOpX<NEQ>(e)) { return mknary<NEQ>(n_args); }
+
+      if (isOpX<LEQ>(e)) { return mknary<BULE>(n_args); }
+
+      if (isOpX<GEQ>(e)) { return mknary<BUGE>(n_args); }
+
+      if (isOpX<LT>(e)) { return mknary<BULT>(n_args); }
+
+      if (isOpX<GT>(e)) { return mknary<BUGT>(n_args); }
+
+      if (isOpX<PLUS>(e)) { return mknary<BADD>(n_args); }
+
+      if (isOpX<MINUS>(e)) { return mknary<BSUB>(n_args); }
+
+      if (isOpX<MULT>(e)) { return mknary<BMUL>(n_args); }
+
+      std::cerr << "Case not covered when translating operation from LIA to BV " << *e << std::endl;
+      assert(false);
+      throw std::logic_error("Case not covered when translating operation from LIA to BV");
+    }
+
   }
 }
 #endif //SEAHORN_SIMPLIFICATIONPASSES_HPP
