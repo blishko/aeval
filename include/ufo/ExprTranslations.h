@@ -30,21 +30,6 @@ namespace expr {
         }
       };
 
-      class LIA2BVTranslator
-      {
-      public:
-        Expr operator()(Expr e);
-
-      private:
-        Expr _lia2bv(Expr e);
-
-        std::map<Expr, Expr> cache;
-      };
-
-      Expr LIA2BVTranslator::operator()(Expr e) {
-        return this->_lia2bv(e);
-      }
-
       Expr BV2LIATranslator::operator()(Expr e) {
         return this->_bv2lia(e);
       }
@@ -119,12 +104,6 @@ namespace expr {
         throw std::logic_error("Expression not covered in translation from BV to LIA!");
         return e;
       }
-
-      Expr LIA2BVTranslator::_lia2bv(Expr e) {
-        return e;
-      }
-
-
     }
   }
 }
