@@ -2,6 +2,7 @@
 #define NONLINCHCSOLVER__HPP__
 
 #include "HornNonlin.hpp"
+#include "simpl/SimplificationPasses.hpp"
 
 using namespace std;
 using namespace boost;
@@ -104,7 +105,6 @@ namespace ufo
 
     void preproGuessing(Expr e, ExprVector& ev1, ExprVector& ev2, ExprSet& guesses, bool useBV=false)
     {
-//      std::cout << "preproGuessing called on " << *e << std::endl;
       ExprSet ev3;
       filter (e, bind::IsConst (), inserter (ev3, ev3.begin())); // prepare vars
       for (auto it = ev3.begin(); it != ev3.end(); )
@@ -333,11 +333,14 @@ namespace ufo
 
     bool anyProgress(vector<HornRuleExt*>& worklist)
     {
-      for (auto & a : candidates)
-        for (auto & hr : worklist)
+      for (auto & a : candidates) {
+        for (auto &hr : worklist) {
           if (find(hr->srcRelations.begin(), hr->srcRelations.end(), a.first) !=
-              hr->srcRelations.end() || hr->dstRelation == a.first)
+              hr->srcRelations.end() || hr->dstRelation == a.first) {
             if (!a.second.empty()) return true;
+          }
+        }
+      }
       return false;
     }
 
@@ -494,12 +497,6 @@ namespace ufo
       bootstrapping();
 
       auto post = candidates;
-//      for (auto const& entry : candidates) {
-//        std::cout << *entry.first << '\n';
-//        for (auto const& cand : entry.second) {
-//          std::cout << '\t' << *cand << '\n';
-//        }
-//      }
       filterUnsat();
       propagateCandidatesForward();
 
@@ -614,28 +611,94 @@ namespace ufo
 
   inline void solveNonlin(string smt, bool inv = true)
   {
+    const unsigned timeout_seconds = 1;
+    const unsigned timeout_milisecs = timeout_seconds * 1000; // in miliseconds
     ExprFactory m_efac;
     EZ3 z3(m_efac);
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
 //    ruleManager.print();
+    CHCs original(ruleManager);
     ruleManager.simplifyCHCSystemSyntactically();
-//    outs() << "After simplofication:\n";
+//    outs() << "After simplification:\n";
+    ruleManager.print();
+//    outs () << "After slicing:\n";
+    ruleManager.slice();
 //    ruleManager.print();
-
-    NonlinCHCsolver nonlin(ruleManager);
-    if (ruleManager.hasBV) {
-      auto liaRuleManager = translateToLIA(ruleManager);
-//      liaRuleManager.dump(std::cout);
-      auto solution = liaRuleManager.solve();
+    passes::BV1ToBool cleanup_pass;
+    cleanup_pass(ruleManager);
+//    outs() << "After cleanup:\n";
+    CHCs* current = cleanup_pass.getCHCs();
+//    current->print();
+    passes::ITESimplificationPass itepass;
+    itepass(*current);
+//    current->print();
+    std::cout << "Solving..." << std::endl;
+    auto sol = current->solve(timeout_milisecs);
+    if (!sol.empty()) {
+//      std::cout << "Solution for simplified system found!" << std::endl;
+//      for (auto& s : sol) {
+//        std::cout << *s.first << " : " << *s.second << std::endl;
+//      }
+      // translate solution to the original system
+      sol = cleanup_pass.getInvariantTranslation().getOriginalSolution(sol);
+      // MB TODO: check if solves the original system
+//      std::map<Expr, ExprSet> candidates;
+//      for (auto& s : sol) {
+//        std::cout << *s.first << " : " << *s.second << std::endl;
+//        candidates.insert(std::make_pair(bind::fname(s.first), ExprSet{s.second}));
+//      }
+//      NonlinCHCsolver nonlin (original);
+//      nonlin.candidates = candidates;
+//      vector<HornRuleExt*> worklist;
+//      for (auto & hr : current->chcs) worklist.push_back(&hr);
+//      nonlin.multiHoudini(worklist);
+//      if(nonlin.checkAllOver(true)) {
+//        std::cout << "Solved!\n";
+//        exit(2);
+//      }
+//      else {
+//        std::cout << "Somepart of invariant does not work\n";
+//      }
+    }
+    if (current->hasBV) {
+      passes::BV2LIAPass bv2lia;
+      bv2lia(*current);
+      current = bv2lia.getTransformed();
+      auto solution = current->solve();
       if (!solution.empty()) {
-        for (auto const& entry : solution) {
-          std::cout << "Solution in LIA found!\n";
-          std::cout << *entry.first << " - " << *entry.second << '\n';
-        }
+//        std::cout << "Solution in LIA found!\n";
+//        for (auto const& entry : solution) {
+//          std::cout << *entry.first << " - " << *entry.second << '\n';
+//        }
+        auto invariantTranslator = bv2lia.getInvariantTranslator();
+        auto translated = invariantTranslator.translateInvariant(solution);
+//        std::cout << "Translated solution:\n";
+//        for (auto const& entry : translated) {
+//          std::cout << *entry.first << " - " << *entry.second << '\n';
+//        }
+        auto originalSol = cleanup_pass.getInvariantTranslation().getOriginalSolution(translated);
+        // MB TODO: check if solves the original system
+//        std::map<Expr, ExprSet> candidates;
+//        for (auto& s : originalSol) {
+//          candidates.insert(std::make_pair(bind::fname(s.first), ExprSet{s.second}));
+//        }
+//        NonlinCHCsolver nonlin (original);
+//        nonlin.candidates = candidates;
+//        vector<HornRuleExt*> worklist;
+//        for (auto & hr : original.chcs) worklist.push_back(&hr);
+//        nonlin.multiHoudini(worklist);
+//        if(nonlin.checkAllOver(true)) {
+//          std::cout << "Solved!\n";
+//          exit(2);
+//        }
+//        else {
+//          std::cout << "Somepart of invariant does not work\n";
+//        }
       }
     }
     exit(1);
+    NonlinCHCsolver nonlin(*current);
     if (inv)
       nonlin.guessAndSolve();
     else
