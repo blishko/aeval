@@ -245,6 +245,167 @@ namespace ufo {
         }
       };
     };
+
+    struct BV2LIAPass {
+      void operator()(const CHCs & system);
+
+      CHCs* getTransformed() { return transformed.get(); }
+    private:
+      std::unique_ptr<CHCs> transformed;
+
+      std::map<Expr, Expr> variableMap;
+      std::map<Expr, Expr> declsMap;
+
+
+      ExprSet translateDeclarations(const ExprSet& originals);
+      std::vector<HornRuleExt> translateClauses(const std::vector<HornRuleExt>& originals);
+      std::map<Expr, ExprVector> translateInvVars(const std::map<Expr, ExprVector>& originals);
+
+      void translateVariables(const HornRuleExt & in, HornRuleExt & out);
+      void translateBody(const HornRuleExt & in, HornRuleExt & out);
+      void translateHead(const HornRuleExt & in, HornRuleExt & out);
+
+      Expr translateVar(Expr var);
+      Expr translateGeneralExpression(Expr body);
+
+      static bool isBVVar(Expr e) { return isOpX<FAPP>(e) && isBVSort(e->first()->last()); }
+      static bool isBVSort(Expr e) { return isOpX<BVSORT>(e); }
+    };
+
+    void BV2LIAPass::operator()(const CHCs & system) {
+      transformed.reset( new CHCs {system.m_efac, system.m_z3});
+      CHCs& liaSystem = *transformed;
+
+      liaSystem.decls = translateDeclarations(system.decls);
+      // FAIL is the same
+      liaSystem.failDecl = system.failDecl;
+      // translated each CHC
+      liaSystem.chcs = translateClauses(system.chcs);
+      // translate var info
+      liaSystem.invVars = translateInvVars(system.invVars);
+      // translate incms
+      // TODO: test what is the key
+      liaSystem.incms = system.incms;
+    }
+
+    ExprSet BV2LIAPass::translateDeclarations(const ExprSet & originals) {
+      ExprSet ret;
+      for (const auto& decl : originals) {
+        assert(bind::isFdecl(decl));
+        ExprVector types;
+        for (int i = 1; i < decl->arity(); ++i) {
+          Expr arg = decl->arg(i);
+          Expr type = isOpX<BVSORT>(arg) ? sort::intTy(arg->getFactory()) : arg;
+          types.push_back(type);
+        }
+        Expr name = bind::fname(decl);
+        Expr translated = bind::fdecl(name, types);
+        declsMap[decl] = translated;
+        ret.insert(translated);
+      }
+      return ret;
+    }
+
+    std::vector<HornRuleExt> BV2LIAPass::translateClauses(const std::vector<HornRuleExt> & originals) {
+      std::vector<HornRuleExt> ret;
+      for (const auto& clause : originals) {
+        ret.emplace_back();
+        HornRuleExt& translated = ret.back();
+        // set flags
+        translated.isQuery = clause.isQuery;
+        translated.isFact = clause.isFact;
+        translated.isInductive = clause.isInductive;
+
+        translateVariables(clause, translated);
+
+        translateBody(clause, translated);
+
+        translateHead(clause, translated);
+        // copy the relations, these are just names
+        assert(isOpX<STRING>(clause.dstRelation));
+        translated.dstRelation = clause.dstRelation;
+        translated.srcRelations = clause.srcRelations;
+      }
+      return ret;
+    }
+
+    void BV2LIAPass::translateVariables(const ufo::HornRuleExt &in, ufo::HornRuleExt &out) {
+      // src variables
+      for (const auto& srcVars : in.srcVars) {
+        ExprVector translatedVars;
+        for (const auto& var : srcVars) {
+          Expr translatedVar = translateVar(var);
+          translatedVars.push_back(translatedVar);
+        }
+        out.srcVars.push_back(translatedVars);
+      }
+      // dst variables
+      for (const auto& dstVar : in.dstVars) {
+        out.dstVars.push_back(translateVar(dstVar));
+      }
+      // local variables
+      for (const auto& locVar : in.locVars) {
+        out.locVars.push_back(translateVar(locVar));
+      }
+    }
+
+    Expr BV2LIAPass::translateVar(expr::Expr var) {
+      auto it = this->variableMap.find(var);
+      if (it != variableMap.end()) { return it->second; }
+      Expr translatedVar = this->isBVVar(var) ?
+                           bind::intVar(bind::fname(bind::fname(var)))
+                           : var;
+        variableMap[var] = translatedVar;
+        return translatedVar;
+    }
+
+    void BV2LIAPass::translateBody(const ufo::HornRuleExt &in, ufo::HornRuleExt &out) {
+      out.body = translateGeneralExpression(in.body);
+    }
+
+    Expr BV2LIAPass::translateGeneralExpression(expr::Expr body) {
+      // Using the Rewriter approach - rewrites expression from leaves to root
+      RW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator(variableMap, declsMap));
+      Expr res = dagVisit(rw, body);
+      return res;
+    }
+
+    void BV2LIAPass::translateHead(const ufo::HornRuleExt &in, ufo::HornRuleExt &out) {
+      if (in.isQuery) {
+        // Fail declaration is treated differently, so manual handling of special case
+        out.head = in.head;
+        return;
+      }
+      Expr head = in.head;
+      assert(bind::isFapp(head));
+      Expr decl = bind::fname(head);
+      assert(declsMap.find(decl) != declsMap.end());
+      Expr n_decl = declsMap.at(decl);
+      ExprVector n_args;
+      for (int i = 0; i < bind::domainSz(decl); ++i) {
+        Expr arg = head->arg(i + 1);
+        assert(variableMap.find(arg) != variableMap.end());
+        n_args.push_back(variableMap.at(arg));
+      }
+      Expr n_head = bind::fapp(n_decl, n_args);
+      out.head = n_head;
+    }
+
+    std::map<Expr, ExprVector> BV2LIAPass::translateInvVars(const map<Expr, ExprVector> & originals) {
+      std::map<Expr, ExprVector> res;
+      for (const auto& entry : originals) {
+        Expr predicate = entry.first;
+        assert(isOpX<STRING>(predicate));
+        const auto& vars = entry.second;
+        ExprVector translatedVars;
+        for (const auto& var : vars) {
+          assert(variableMap.find(var) != variableMap.end());
+          translatedVars.push_back(variableMap.at(var));
+        }
+        res.insert(std::make_pair(predicate, translatedVars));
+      }
+      return res;
+    }
   }
 }
 #endif //SEAHORN_SIMPLIFICATIONPASSES_HPP

@@ -33,7 +33,7 @@ namespace ufo
   struct HornRuleExt
   {
     vector<ExprVector> srcVars;
-    ExprVector dstVars;
+    ExprVector dstVars; // These are FAPPs!
     ExprVector locVars;
 
     Expr body;
@@ -665,59 +665,5 @@ namespace ufo
       return dagVisit(rw, e);
     }
   };
-
-  static inline HornRuleExt translateToLIA(HornRuleExt const& chc) {
-    HornRuleExt lia_chc;
-    lia_chc.isQuery = chc.isQuery;
-    lia_chc.isFact = chc.isFact;
-    lia_chc.isInductive = chc.isInductive;
-    RW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator());
-    Expr lia_body = dagVisit(rw, chc.body);
-//      std::cout << "Original body: " << *chc.body << std::endl;
-//      std::cout << "Translated body: " << *lia_body << std::endl;
-    lia_chc.body = lia_body;
-    lia_chc.dstRelation = dagVisit(rw, chc.dstRelation);
-    for (auto const & srcRelation : chc.srcRelations) {
-      lia_chc.srcRelations.push_back(dagVisit(rw, srcRelation));
-    }
-    lia_chc.head = dagVisit(rw, chc.head);
-    // vars
-    for (auto const& locVar : chc.locVars) {
-      lia_chc.locVars.push_back(dagVisit(rw, locVar));
-    }
-    for (auto const& dstVar : chc.dstVars) {
-      lia_chc.dstVars.push_back(dagVisit(rw, dstVar));
-    }
-    for (auto const& srcVars : chc.srcVars) {
-      ExprVector lia_srcVars;
-      for (auto const& srcVar : srcVars) {
-        lia_srcVars.push_back(dagVisit(rw, srcVar));
-      }
-      lia_chc.srcVars.push_back(lia_srcVars);
-    }
-    return lia_chc;
-  }
-
-  static inline CHCs translateToLIA(const CHCs& chc_manager) {
-    CHCs lia_chcs{chc_manager.m_efac, chc_manager.m_z3};
-    for (auto & chc : chc_manager.chcs) {
-      lia_chcs.chcs.push_back(translateToLIA(chc));
-    }
-    lia_chcs.failDecl = chc_manager.failDecl;
-    CompleteRW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator());
-    for (auto const & decl : chc_manager.decls) {
-
-      lia_chcs.decls.insert(dagVisit(rw, decl));
-    }
-    for (auto const& entry : chc_manager.invVars) {
-      Expr key = dagVisit(rw, entry.first);
-      ExprVector val;
-      for (auto const& v : entry.second) {
-        val.push_back(dagVisit(rw, v));
-      }
-      lia_chcs.invVars.insert(std::make_pair<>(key, val));
-    }
-    return lia_chcs;
-  }
 }
 #endif
