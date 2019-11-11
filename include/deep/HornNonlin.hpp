@@ -542,17 +542,17 @@ namespace ufo
       }
     }
 
-
-    ZFixedPoint<EZ3> toZ3fp() {
+    ZFixedPoint<EZ3> toZ3fp()
+    {
       // fixed-point object
       ZFixedPoint<EZ3> fp (m_z3);
       ZParams<EZ3> params (m_z3);
       fp.set (params);
 
-      fp.registerRelation (bind::boolConstDecl(failDecl));
+      Expr errRel = bind::boolConstDecl(failDecl);
+      fp.registerRelation(errRel);
 
       for (auto & dcl : decls) fp.registerRelation (dcl);
-      Expr errApp;
 
       for (auto & r : chcs)
       {
@@ -563,7 +563,11 @@ namespace ufo
         allVars.insert(r.dstVars.begin(), r.dstVars.end());
         allVars.insert(r.locVars.begin(), r.locVars.end());
 
-        if (!r.isQuery)
+        if (r.isQuery)
+        {
+          r.head = bind::fapp (errRel);
+        }
+        else
         {
           for (auto & dcl : decls)
           {
@@ -574,13 +578,8 @@ namespace ufo
             }
           }
         }
-        else
-        {
-          r.head = bind::fapp(bind::boolConstDecl(failDecl));
-          errApp = r.head;
-        }
 
-        ExprVector pres;
+        ExprSet pres;
         if (!r.isFact)
         {
           int counter = 0;
@@ -589,20 +588,16 @@ namespace ufo
             {
               if (dcl->left() == srcRelation)
               {
-                pres.push_back(bind::fapp (dcl, r.srcVars[counter]));
+                pres.insert(bind::fapp (dcl, r.srcVars[counter]));
                 break;
               }
             }
             ++counter;
           }
         }
-        else
-        {
-          pres.push_back(mk<TRUE>(m_efac));
-        }
-        pres.push_back(r.body);
+        getConj(r.body, pres);
         assert(isOpX<FAPP>(r.head));
-        fp.addRule(allVars, boolop::limp (mknary<AND>(pres), r.head));
+        fp.addRule(allVars, boolop::limp (conjoin(pres, m_efac), r.head));
       }
       fp.addQuery(bind::fapp(bind::fdecl(this->failDecl, ExprVector{sort::boolTy(m_efac)})));
       return fp;
@@ -614,13 +609,13 @@ namespace ufo
       out << fp << std::endl;
     }
 
-    std::map<Expr, Expr> solve(unsigned timeout = 0u) {
+    ExprMap solve(unsigned timeout = 0u) {
       auto fp = toZ3fp();
       ZParams<EZ3> params (m_z3);
       params.set("timeout", timeout);
       fp.set (params);
       tribool res;
-      std::map<Expr, Expr> solution;
+      ExprMap solution;
       try {
         res = fp.query();
       } catch (z3::exception &e){

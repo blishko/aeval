@@ -345,7 +345,7 @@ namespace ufo {
 
         translateBody(clause, translated);
 
-        translateHead(clause, translated);
+//        translateHead(clause, translated);
         // copy the relations, these are just names
         assert(isOpX<STRING>(clause.dstRelation));
         translated.dstRelation = clause.dstRelation;
@@ -378,7 +378,7 @@ namespace ufo {
       auto it = this->variableMap.find(var);
       if (it != variableMap.end()) { return it->second; }
       Expr translatedVar = this->isBVVar(var) ?
-                           bind::intVar(bind::fname(bind::fname(var)))
+                           bind::intConst(bind::fname(bind::fname(var)))
                            : var;
         variableMap[var] = translatedVar;
         return translatedVar;
