@@ -45,6 +45,8 @@ namespace ufo
 
     NonlinCHCsolver (CHCs& r) : m_efac(r.m_efac), ruleManager(r), u(m_efac) {}
 
+    void setCandidates(map<Expr, ExprSet> _candidates) { this->candidates = std::move(_candidates); }
+
     Expr quantifierElimination(Expr& cond, ExprSet& vars)
     {
       if (vars.size() == 0) return cond;
@@ -621,7 +623,7 @@ namespace ufo
     CHCs original(ruleManager);
     ruleManager.simplifyCHCSystemSyntactically();
 //    outs() << "After simplification:\n";
-    ruleManager.print();
+//    ruleManager.print();
 //    outs () << "After slicing:\n";
     ruleManager.slice();
 //    ruleManager.print();
@@ -633,16 +635,14 @@ namespace ufo
     passes::ITESimplificationPass itepass;
     itepass(*current);
 //    current->print();
-    std::cout << "Solving..." << std::endl;
-    auto sol = current->solve(timeout_milisecs);
-    if (!sol.empty()) {
+//    auto sol = current->solve(1);
+//    if (!sol.empty()) {
 //      std::cout << "Solution for simplified system found!" << std::endl;
 //      for (auto& s : sol) {
 //        std::cout << *s.first << " : " << *s.second << std::endl;
 //      }
       // translate solution to the original system
-      sol = cleanup_pass.getInvariantTranslation().getOriginalSolution(sol);
-      // MB TODO: check if solves the original system
+//      sol = cleanup_pass.getInvariantTranslation().getOriginalSolution(sol);
 //      std::map<Expr, ExprSet> candidates;
 //      for (auto& s : sol) {
 //        std::cout << *s.first << " : " << *s.second << std::endl;
@@ -660,11 +660,12 @@ namespace ufo
 //      else {
 //        std::cout << "Somepart of invariant does not work\n";
 //      }
-    }
+//    }
     if (current->hasBV) {
       passes::BV2LIAPass bv2lia;
       bv2lia(*current);
       current = bv2lia.getTransformed();
+//      current->print();
       auto solution = current->solve();
       if (!solution.empty()) {
 //        std::cout << "Solution in LIA found!\n";
@@ -678,23 +679,22 @@ namespace ufo
 //          std::cout << *entry.first << " - " << *entry.second << '\n';
 //        }
         auto originalSol = cleanup_pass.getInvariantTranslation().getOriginalSolution(translated);
-        // MB TODO: check if solves the original system
-//        std::map<Expr, ExprSet> candidates;
-//        for (auto& s : originalSol) {
-//          candidates.insert(std::make_pair(bind::fname(s.first), ExprSet{s.second}));
-//        }
-//        NonlinCHCsolver nonlin (original);
-//        nonlin.candidates = candidates;
-//        vector<HornRuleExt*> worklist;
-//        for (auto & hr : original.chcs) worklist.push_back(&hr);
-//        nonlin.multiHoudini(worklist);
-//        if(nonlin.checkAllOver(true)) {
-//          std::cout << "Solved!\n";
-//          exit(2);
-//        }
-//        else {
-//          std::cout << "Somepart of invariant does not work\n";
-//        }
+        std::map<Expr, ExprSet> candidates;
+        for (auto& s : originalSol) {
+          candidates.insert(std::make_pair(bind::fname(s.first), ExprSet{s.second}));
+//          std::cout << *bind::fname(s.first) << " - " << *s.second << std::endl;
+        }
+        NonlinCHCsolver nonlin (original);
+        nonlin.setCandidates(candidates);
+        vector<HornRuleExt*> worklist;
+        for (auto & hr : original.chcs) worklist.push_back(&hr);
+        nonlin.multiHoudini(worklist);
+        if(nonlin.checkAllOver(true)) {
+          std::cout << "Solved!\n";
+        }
+        else {
+          std::cout << "Somepart of invariant does not work\n";
+        }
       }
     }
     exit(1);
