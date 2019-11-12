@@ -656,21 +656,6 @@ namespace ufo
     }
   };
 
-  template<typename T>
-  struct CompleteRW
-  {
-    std::shared_ptr<T> _r;
-
-    CompleteRW (std::shared_ptr<T> r) : _r(r) {}
-    CompleteRW (T *r) : _r (r) {}
-
-
-    VisitAction operator() (Expr exp)
-    {
-      return VisitAction::changeDoKidsRewrite (exp, _r);
-    }
-  };
-  
   inline static Expr simplifiedPlus (Expr exp, Expr to_skip){
     ExprVector args;
     Expr ret;
