@@ -389,9 +389,15 @@ namespace ufo {
     }
 
     Expr BV2LIAPass::translateGeneralExpression(expr::Expr body) {
+      RW<bv::BitWidthComputer> computer (new bv::BitWidthComputer());
+      dagVisit(computer, body);
+      auto bitwidthMap = computer._r->getBitWidths();
       // Using the Rewriter approach - rewrites expression from leaves to root
-      RW<bv::BV2LIATranslator> rw (new bv::BV2LIATranslator(variableMap, declsMap));
-      Expr res = dagVisit(rw, body);
+      bv::BV2LIATranslator translator(variableMap, declsMap, bitwidthMap);
+      bv::BV2LIAVisitor visitor;
+      visitor.setTranslator(&translator);
+      Expr res = dagVisit(visitor, body);
+      visitor.setTranslator(nullptr);
       return res;
     }
 

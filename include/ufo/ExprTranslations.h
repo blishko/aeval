@@ -15,7 +15,11 @@ namespace expr {
       {
       public:
         using subs_t = std::map<Expr, Expr>;
-        BV2LIATranslator(const subs_t& subs, const subs_t& decls) : varMap{subs}, declsMap{decls} {}
+        using bits_t = std::map<Expr, int>;
+        BV2LIATranslator(subs_t const & subs, subs_t const & decls, bits_t const & bits) :
+        varMap{subs}, declsMap{decls}, bitwidths{bits}
+        {}
+
         Expr operator()(Expr e);
 
       private:
@@ -23,6 +27,7 @@ namespace expr {
 
         const subs_t& varMap;
         const subs_t& declsMap;
+        const bits_t& bitwidths;
         subs_t abstractionsMap;
         std::size_t freshCounter = 0;
         std::string getFreshName() {
@@ -30,11 +35,24 @@ namespace expr {
         }
       };
 
+      class BV2LIAVisitor {
+        BV2LIATranslator* translator;
+      public:
+        void setTranslator(BV2LIATranslator * trans) { this->translator = trans; }
+        VisitAction operator()(Expr e) {
+          if (e->arity() == 0)
+            return VisitAction::skipKids ();
+          if (!translator) { throw std::logic_error("No translator set!"); }
+          BV2LIATranslator& trans = *translator;
+          Expr tr = trans(e);
+          return VisitAction::changeDoKids(tr);
+        }
+      };
+
       Expr BV2LIATranslator::operator()(Expr e) {
         return this->_bv2lia(e);
       }
 
-      // Assummes the children have already been translated
       Expr BV2LIATranslator::_bv2lia(Expr e) {
         auto it = abstractionsMap.find(e);
         if (it != abstractionsMap.end()) { return it->second; }
@@ -57,10 +75,24 @@ namespace expr {
           return e;
         }
         if (isOpX<BADD>(e)) {
-          return mk<PLUS>(e->left(), e->right());
+          auto wit = bitwidths.find(e);
+          assert(wit != bitwidths.end());
+          int width = wit->second;
+          mpz_class upperBound;
+          mpz_ui_pow_ui(upperBound.get_mpz_t(), 2, width);
+          Expr plus = mk<PLUS>(e->left(), e->right());
+          Expr bound = mkTerm(upperBound, e->getFactory());
+          return mk<ITE>(mk<GEQ>(plus, bound), mk<MINUS>(plus, bound), plus);
         }
         if (isOpX<BSUB>(e)) {
-          return mk<MINUS>(e->left(), e->right());
+          Expr minus = mk<MINUS>(e->left(), e->right());
+          auto wit = bitwidths.find(e);
+          assert(wit != bitwidths.end());
+          int width = wit->second;
+          mpz_class upperBound;
+          mpz_ui_pow_ui(upperBound.get_mpz_t(), 2, width);
+          Expr bound = mkTerm(upperBound, e->getFactory());
+          return mk<ITE>(mk<LT>(minus, mkTerm(mpz_class(0), e->getFactory())), mk<PLUS>(minus, bound), minus);
         }
         if (isOpX<BUGE>(e)) {
           return mk<GEQ>(e->left(), e->right());
@@ -97,6 +129,9 @@ namespace expr {
           auto iter = declsMap.find(e);
           if (iter != declsMap.end()) { return iter->second; }
           // MB: otherwise nothing to do
+          return e;
+        }
+        if (isOp<ComparissonOp>(e) || isOp<NumericOp>(e)) {
           return e;
         }
         // MB: add cases if necessary

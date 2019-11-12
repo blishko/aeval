@@ -273,6 +273,86 @@ namespace expr
         Expr res = mk<EQ>(extr, bvnum(mkTerm<mpz_class>(mpz_class(0), e->getFactory()), bvsort(w, e->getFactory())));
         return res;
       }
+
+      struct BitWidthComputer {
+      private:
+        std::map<Expr, int> bitwidths;
+      public:
+        std::map<Expr, int> getBitWidths() const { return bitwidths; }
+
+        Expr operator()(Expr e) {
+          if (bv::is_bvvar(e) || bv::is_bvnum(e)) {
+            Expr sort = e->right();
+            bitwidths[e] = bv::width(sort);
+          }
+          else if (bv::is_bvconst(e)) {
+            Expr sort = e->first()->right();
+            bitwidths[e] = bv::width(sort);
+          }
+          else if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)) // TODO: add all
+          {
+            Expr e1 = e->left();
+            Expr e2 = e->right();
+            assert(bitwidths.find(e1) != bitwidths.end()
+                   && bitwidths.find(e2) != bitwidths.end()
+                   && bitwidths[e1] == bitwidths[e2]);
+
+            bitwidths[e] = bitwidths[e1];
+          }
+          else if (isOpX<BNOT>(e)) {
+            Expr arg = e->first();
+            assert(bitwidths.find(arg) != bitwidths.end());
+            bitwidths[e] = bitwidths[arg];
+          }
+          else if (isOpX<BEXTRACT>(e)) {
+            auto h = bv::high(e);
+            auto l = bv::low(e);
+            assert(h >= l);
+            int res = h - l + 1;
+            bitwidths[e] = res;
+          }
+          else if (isOpX<ITE>(e)) {
+            Expr e1 = e->arg(1);
+            Expr e2 = e->arg(2);
+            if (bitwidths.find(e1) != bitwidths.end()
+                && bitwidths.find(e2) != bitwidths.end()
+                && bitwidths[e1] == bitwidths[e2])
+            {
+              bitwidths[e] = bitwidths[e1];
+            }
+          }
+          else if (isOpX<BCONCAT>(e)) {
+            assert(e->arity() == 2); // MB: Can be different?
+            Expr e1 = e->arg(0);
+            Expr e2 = e->arg(1);
+            auto it1 = bitwidths.find(e1);
+            auto it2 = bitwidths.find(e2);
+            assert(it1 != bitwidths.end() && it2 != bitwidths.end());
+            if (it1 != bitwidths.end()
+                && it2 != bitwidths.end()
+                )
+            {
+              bitwidths[e] = bitwidths[e1] + bitwidths[e2];
+            }
+          }
+          else if (bind::isFdecl(e) || isOp<BoolOp>(e) || isOp<ComparissonOp>(e) || bind::isBoolConst(e)) {
+            return e;
+          }
+          else {
+            std::cerr << "Warning! Operation not covered in computing bitwidths of expression: "<< *e << "\n";
+            assert(false);
+            throw std::logic_error("Operation not covered in computing bitwidths of expression!");
+          }
+          return e;
+        }
+      };
+
+      std::map<Expr, int> computeBitwidths(Expr e) {
+        BitWidthComputer comp;
+        RW<BitWidthComputer> rw (std::shared_ptr<BitWidthComputer>(new BitWidthComputer()));
+        dagVisit(rw, e);
+        return comp.getBitWidths();
+      }
     }
     
     namespace bind
