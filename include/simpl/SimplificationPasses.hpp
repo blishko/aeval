@@ -345,7 +345,7 @@ namespace ufo {
 
         translateBody(clause, translated);
 
-//        translateHead(clause, translated);
+        translateHead(clause, translated);
         // copy the relations, these are just names
         assert(isOpX<STRING>(clause.dstRelation));
         translated.dstRelation = clause.dstRelation;
@@ -407,19 +407,20 @@ namespace ufo {
         out.head = in.head;
         return;
       }
-      Expr head = in.head;
-      assert(bind::isFapp(head));
-      Expr decl = bind::fname(head);
+//      Expr head = in.head;
+//      outs () << *head << "\n";
+//      assert(bind::isFapp(head));
+      Expr decl = in.head; //bind::fname(head);
       assert(declsMap.find(decl) != declsMap.end());
       Expr n_decl = declsMap.at(decl);
-      ExprVector n_args;
-      for (int i = 0; i < bind::domainSz(decl); ++i) {
-        Expr arg = head->arg(i + 1);
-        assert(variableMap.find(arg) != variableMap.end());
-        n_args.push_back(variableMap.at(arg));
-      }
-      Expr n_head = bind::fapp(n_decl, n_args);
-      out.head = n_head;
+//      ExprVector n_args;
+//      for (int i = 0; i < bind::domainSz(decl); ++i) {
+//        Expr arg = head->arg(i + 1);
+//        assert(variableMap.find(arg) != variableMap.end());
+//        n_args.push_back(variableMap.at(arg));
+//      }
+//      Expr n_head = bind::fapp(n_decl, n_args);
+      out.head = n_decl;
     }
 
     std::map<Expr, ExprVector> BV2LIAPass::translateInvVars(const map<Expr, ExprVector> & originals) {
@@ -454,10 +455,25 @@ namespace ufo {
       BV2LIAPass::inv_t res;
       for (auto const& entry : inv) {
         Expr predicate = entry.first;
-        assert(bind::isFdecl(predicate));
-        auto it = declsMap.find(predicate);
-        assert(it != declsMap.end());
-        Expr translatedPredicate = it->second;
+        Expr translatedPredicate;
+        if (bind::isFdecl(predicate))
+        {
+          auto it = declsMap.find(predicate);
+          assert(it != declsMap.end());
+          translatedPredicate = it->second;
+        }
+        else
+        {
+          for (auto & a : declsMap)
+          {
+            if (a.first->left() == predicate)
+            {
+              translatedPredicate = a.second;
+              break;
+            }
+          }
+        }
+        assert(translatedPredicate != NULL);
         Expr interpretation = entry.second;
         Expr translatedInterpretation = translateRecursively(interpretation);
         res.insert(std::make_pair(translatedPredicate, translatedInterpretation));
@@ -532,6 +548,7 @@ namespace ufo {
         while (it != end) {
           res = computeExpressionBitWidth(*it);
           if (res != 0) { return res; }
+          else ++it;
         }
         return 0; // UNKNOWN
       }

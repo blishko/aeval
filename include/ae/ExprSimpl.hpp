@@ -656,6 +656,90 @@ namespace ufo
     }
   };
 
+  inline static int separateConst(ExprVector& plsOps)
+  {
+    int c = 0;
+    for (auto it = plsOps.begin(); it != plsOps.end(); )
+    {
+      if (isOpX<MPZ>(*it))
+      {
+        c += lexical_cast<int>(*it);
+        it = plsOps.erase(it);
+        continue;
+      }
+      else ++it;
+    }
+    return c;
+  }
+
+  inline static void getPlusTerms (Expr a, ExprVector &terms)
+  {
+    if (isOpX<PLUS>(a)){
+      for (unsigned i = 0; i < a->arity(); i++){
+        getPlusTerms(a->arg(i), terms);
+      }
+    }
+    else if (isOpX<MINUS>(a)){
+      // assume only two args
+      terms.push_back(a->left());
+      terms.push_back(additiveInverse(a->right()));
+    } else {
+      terms.push_back(a);
+    }
+  }
+
+  inline static Expr simplifyPlus (Expr exp){
+    ExprVector plsOps;
+    getPlusTerms (exp, plsOps);
+    // GF: to extend
+    int c = separateConst(plsOps);
+    if (c != 0) plsOps.push_back(mkTerm (mpz_class (c), exp->getFactory()));
+    return mkplus(plsOps, exp->getFactory());
+  }
+
+  static Expr reBuildCmp(Expr term, Expr lhs, Expr rhs);
+
+  inline static Expr simplifyCmp (Expr exp)
+  {
+    ExprFactory &efac = exp->getFactory();
+
+    ExprVector plusOpsLeft;
+    ExprVector plusOpsRight;
+    getPlusTerms(exp->left(), plusOpsLeft);
+    getPlusTerms(exp->right(), plusOpsRight);
+
+    int c1 = separateConst(plusOpsLeft);
+    int c2 = separateConst(plusOpsRight);
+
+    for (auto it1 = plusOpsLeft.begin(); it1 != plusOpsLeft.end(); )
+    {
+      bool found = false;
+      for (auto it2 = plusOpsRight.begin(); it2 != plusOpsRight.end(); )
+      {
+        if (*it1 == *it2)
+        {
+          found = true;
+          plusOpsRight.erase(it2);
+          break;
+        }
+        else
+        {
+          ++it2;
+        }
+      }
+      if (found) it1 = plusOpsLeft.erase(it1);
+      else ++it1;
+    }
+
+    if (c1 > c2)
+      plusOpsLeft.push_back(mkTerm (mpz_class (c1 - c2), efac));
+    else if (c1 < c2)
+      plusOpsRight.push_back(mkTerm (mpz_class (c2 - c1), efac));
+
+    return reBuildCmp(exp, mkplus(plusOpsLeft, efac), mkplus(plusOpsRight, efac));
+  }
+
+  // GF: to rewrite/remove
   inline static Expr simplifiedPlus (Expr exp, Expr to_skip){
     ExprVector args;
     Expr ret;
@@ -742,7 +826,15 @@ namespace ufo
     
     return ret;
   }
-  
+
+  inline static bool isNumeric(Expr a)
+  {
+    // don't consider ITE-s
+    return (isOp<NumericOp>(a) || isOpX<MPZ>(a) ||
+            isOpX<MPQ>(a) || bind::isIntConst(a) || isOpX<SELECT>(a)
+            || bv::is_bvnum(a));
+  }
+
   struct SimplifyArithmExpr
   {
     ExprFactory &efac;
@@ -750,37 +842,37 @@ namespace ufo
     Expr zero;
     Expr one;
     Expr minus_one;
-    
+
     SimplifyArithmExpr (ExprFactory& _efac):
     efac(_efac)
     {
       zero = mkTerm (mpz_class (0), efac);
       one = mkTerm (mpz_class (1), efac);
-      minus_one = mkTerm (mpz_class (1), efac);
+      minus_one = mkTerm (mpz_class (-1), efac);
     };
-    
+
     Expr operator() (Expr exp)
     {
       if (isOpX<PLUS>(exp))
       {
-        return simplifiedPlus(exp, zero);
+        return simplifyPlus(exp);
       }
-      
+
       if (isOpX<MINUS>(exp) && exp->arity() == 2)
       {
         return simplifiedMinus(exp->left(), exp->right());
       }
-      
+
       if (isOpX<MULT>(exp))
       {
         if (exp->left() == zero) return zero;
         if (exp->right() == zero) return zero;
         if (exp->left() == one) return exp->right();
         if (exp->right() == one) return exp->left();
-        if (exp->left() == minus_one) return mk<UN_MINUS>(exp->right());
-        if (exp->right() == minus_one) return mk<UN_MINUS>(exp->left());
+        if (exp->left() == minus_one) return additiveInverse(exp->right());
+        if (exp->right() == minus_one) return additiveInverse(exp->left());
       }
-      
+
       if (isOpX<UN_MINUS>(exp))
       {
         Expr uneg = exp->left();
@@ -794,15 +886,20 @@ namespace ufo
           if (isOpX<UN_MINUS>(unegr)) return mk<MINUS>(unegr->left(), unegl);
         }
       }
-      
+
       if (isOpX<MINUS>(exp))
       {
         if (isOpX<UN_MINUS>(exp->right())) return mk<PLUS>(exp->left(), exp->right()->left());
       }
+
+      if (isOp<ComparissonOp>(exp) && isNumeric(exp->right()))
+      {
+        return simplifyCmp(exp);
+      }
       return exp;
     }
   };
-  
+
   inline static Expr simplifyBool (Expr exp);
 
   struct SimplifyBoolExpr
@@ -1954,14 +2051,6 @@ namespace ufo
       return mkNeg(term->last());
     }
     return mk<NEG>(term);
-  }
-
-  inline static bool isNumeric(Expr a)
-  {
-    // don't consider ITE-s
-    return (isOp<NumericOp>(a) || isOpX<MPZ>(a) ||
-            isOpX<MPQ>(a) || bind::isIntConst(a) || isOpX<SELECT>(a)
-            || bv::is_bvnum(a));
   }
 
   inline static Expr convertToGEandGT(Expr term)
