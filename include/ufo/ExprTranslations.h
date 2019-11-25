@@ -21,6 +21,7 @@ namespace expr {
         {}
 
         Expr operator()(Expr e);
+        subs_t getAbstractionsMap() const { return abstractionsMap; }
 
       private:
         Expr _bv2lia(Expr e);
@@ -105,6 +106,12 @@ namespace expr {
         }
         if (isOpX<BULT>(e)) {
           return mk<LT>(e->left(), e->right());
+        }
+        if (isOpX<BAND>(e)) {
+          // MB: abstract for now
+          Expr var = bind::intConst(mkTerm<std::string>(getFreshName(), e->getFactory()));
+          abstractionsMap[e] = var;
+          return var;
         }
         if (isOpX<BEXTRACT>(e)) {
           if (bv::low(e) == 0 && bv::high(e) == 0) {

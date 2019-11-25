@@ -33,7 +33,10 @@ namespace ufo {
       public:
         InvariantTranslation(const subs_t& originalMap) {
           for(const auto& entry : originalMap) {
-            backSubMap.insert(std::make_pair(entry.second, entry.first));
+            Expr bvvar = entry.first;
+            Expr bv_one = bv::bvnum(1, 1, bvvar->getFactory());
+            Expr boolVarToBVExpr = mk<EQ>(bvvar, bv_one);
+            backSubMap.insert(std::make_pair(entry.second, boolVarToBVExpr));
           }
         }
 
@@ -247,8 +250,8 @@ namespace ufo {
     };
 
     struct BV2LIAPass {
-      using inv_t = std::map<Expr, Expr>;
-      using subs_t = std::map<Expr, Expr>;
+      using inv_t = ExprMap;
+      using subs_t = ExprMap;
 
       struct InvariantTranslator {
         InvariantTranslator(subs_t variableMap, subs_t declsMap) :
@@ -267,6 +270,11 @@ namespace ufo {
 
         int computeExpressionBitWidth(Expr e);
       };
+      struct TranslationResult {
+        Expr translated;
+        BV2LIAPass::subs_t abstractions;
+      };
+
       // Actual methods of BV2LIAPass
 
       void operator()(const CHCs & system);
@@ -291,7 +299,7 @@ namespace ufo {
       void translateHead(const HornRuleExt & in, HornRuleExt & out);
 
       Expr translateVar(Expr var);
-      Expr translateGeneralExpression(Expr body);
+      TranslationResult translateGeneralExpression(Expr body);
 
       static bool isBVVar(Expr e) { return isOpX<FAPP>(e) && isBVSort(e->first()->last()); }
       static bool isBVSort(Expr e) { return isOpX<BVSORT>(e); }
@@ -385,10 +393,14 @@ namespace ufo {
     }
 
     void BV2LIAPass::translateBody(const ufo::HornRuleExt &in, ufo::HornRuleExt &out) {
-      out.body = translateGeneralExpression(in.body);
+      auto result = translateGeneralExpression(in.body);
+      out.body = result.translated;
+      for (auto const & keyVal : result.abstractions) {
+        out.locVars.push_back(keyVal.second);
+      }
     }
 
-    Expr BV2LIAPass::translateGeneralExpression(expr::Expr body) {
+    BV2LIAPass::TranslationResult BV2LIAPass::translateGeneralExpression(expr::Expr body) {
       RW<bv::BitWidthComputer> computer (new bv::BitWidthComputer());
       dagVisit(computer, body);
       auto bitwidthMap = computer._r->getBitWidths();
@@ -398,7 +410,7 @@ namespace ufo {
       visitor.setTranslator(&translator);
       Expr res = dagVisit(visitor, body);
       visitor.setTranslator(nullptr);
-      return res;
+      return {res, translator.getAbstractionsMap()};
     }
 
     void BV2LIAPass::translateHead(const ufo::HornRuleExt &in, ufo::HornRuleExt &out) {
