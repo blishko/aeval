@@ -11,6 +11,12 @@ namespace expr {
   namespace op {
     namespace bv {
 
+      mpz_class power(unsigned long base, unsigned long exp) {
+        mpz_class res;
+        mpz_ui_pow_ui(res.get_mpz_t(), base, exp);
+        return res;
+      }
+
       class BV2LIATranslator
       {
       public:
@@ -55,8 +61,10 @@ namespace expr {
       }
 
       Expr BV2LIATranslator::_bv2lia(Expr e) {
-        auto it = abstractionsMap.find(e);
-        if (it != abstractionsMap.end()) { return it->second; }
+        {
+          auto it = abstractionsMap.find(e);
+          if (it != abstractionsMap.end()) { return it->second; }
+        }
         if (isOpX<AND>(e) || isOpX<OR>(e) || isOpX<NEG>(e) || isOpX<EQ>(e) || isOpX<NEQ>(e) || isOpX<ITE>(e)
             || bind::isBoolConst(e) || bind::isIntConst(e)
           )
@@ -114,7 +122,18 @@ namespace expr {
           return var;
         }
         if (isOpX<BEXTRACT>(e)) {
-          if (bv::low(e) == 0 && bv::high(e) == 0) {
+          auto it = bitwidths.find(bv::earg(e));
+          assert(it != bitwidths.end());
+          int width = it->second;
+          int low = bv::low(e);
+          int high = bv::high(e);
+          if (high + 1 == width) {
+            // Extracting some upper part of bits, we can use div
+            mpz_class divArg = power(2, low);
+            auto divArgExpr = mkTerm(divArg, e->getFactory());
+            return mk<DIV>(bv::earg(e), divArgExpr);
+          }
+          if (low == 0 && high == 0) {
             return mk<MOD>(e->arg(2), mkTerm(mpz_class(2), e->getFactory()));
           }
           // For now, introduce a fresh variable for this expression
@@ -126,6 +145,21 @@ namespace expr {
           return var;
         }
         if (isOpX<BCONCAT>(e)) {
+          Expr arg1 = e->first();
+          if (bv::is_bvnum(arg1)) {
+            Expr val = arg1->first();
+            auto mpzVal = getTerm<mpz_class>(val);
+            assert(bind::IsHardIntConst{}(val));
+            if (mpzVal == 0) {
+              return _bv2lia(e->arg(1));
+            }
+            Expr arg2 = e->arg(1);
+            auto it = bitwidths.find(arg2);
+            assert(it != bitwidths.end());
+            mpz_class shift = power(2, it->second);
+            mpz_class plusMpz = shift * mpzVal;
+            return mk<PLUS>(arg2, mkTerm(plusMpz, e->getFactory()));
+          }
           // For now, abstract away with a fresh variable
 //          std::cout << "Warning! Abstracting away bvconcat expression " << *e << std::endl;
           Expr var = bind::intConst(mkTerm<std::string>(getFreshName(), e->getFactory()));
