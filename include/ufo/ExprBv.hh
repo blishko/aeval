@@ -289,7 +289,8 @@ namespace expr
             Expr sort = e->first()->right();
             bitwidths[e] = bv::width(sort);
           }
-          else if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)) // TODO: add all
+          else if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)
+              || isOpX<BUGE>(e) || isOpX<BUGT>(e) || isOpX<BULE>(e) || isOpX<BULT>(e)) // TODO: add all
           {
             Expr e1 = e->left();
             Expr e2 = e->right();
