@@ -493,8 +493,25 @@ namespace ufo {
       return res;
     }
 
+    unsigned int binaryLog(mpz_class v) {
+      if (v.fits_ulong_p()) {
+        unsigned long v_ul = v.get_ui();
+        unsigned int res = 0;
+        while (v_ul >>= 1) { ++res; }
+        return res;
+      }
+      // TODO: implement this
+      throw std::logic_error("Not implemented yet!");
+    }
+
+    mpz_class power(unsigned long base, unsigned long exp) {
+      mpz_class res;
+      mpz_ui_pow_ui(res.get_mpz_t(), base, exp);
+      return res;
+    }
+
     Expr BV2LIAPass::InvariantTranslator::translateRecursively(expr::Expr exp) {
-      if (isOpX<AND>(exp) || isOpX<OR>(exp)) {
+      if (isOpX<AND>(exp) || isOpX<OR>(exp) || isOpX<IFF>(exp)) {
         ExprVector n_args;
         for (auto it = exp->args_begin(); it != exp->args_end(); ++it) {
           n_args.push_back(translateRecursively(*it));
@@ -521,11 +538,35 @@ namespace ufo {
             n_args.push_back(translateRecursively(arg));
           }
         }
+        // MB: TODO: Make this work, the problem is that it breaks bitwidth consistency, since expressions
+        //      x/64 and extract(7,6,x) has different bitwidths for x of 8 bits
+//        if (hasConstant && isOpX<IDIV>(exp) && n_args.size() == 2 && isConstant(exp->arg(1))) {
+//          // if it is a power of two, we can model it as BV extract
+//          mpz_class constant = getTerm<mpz_class>(exp->arg(1));
+//          unsigned int exponent = binaryLog(constant);
+//          if (power(2, exponent) == constant) {
+//            return bv::extract(opBitWidth - 1, exponent, n_args[0]);
+//          }
+//        }
+
         Expr res = translateOperation(exp, n_args);
         return res;
       }
       if (bind::isBoolConst(exp)) {
          return exp;
+      }
+      if (isOpX<ITE>(exp)) {
+        Expr then_o = exp->arg(1);
+        Expr else_o = exp->arg(2);
+        Expr cond_n = translateRecursively(exp->arg(0));
+        auto isConstant = bind::IsHardIntConst{};
+        bool hasConstant = std::any_of(exp->args_begin() + 1, exp->args_end(), isConstant);
+        unsigned int opBitWidth = hasConstant ? computeExpressionBitWidth(exp) : 1; // 0 means unknown
+        Expr then_n = isConstant(then_o) ? bv::bvnum(then_o, bv::bvsort(opBitWidth, exp->getFactory()))
+            : translateRecursively(then_o);
+        Expr else_n = isConstant(else_o) ? bv::bvnum(else_o, bv::bvsort(opBitWidth, exp->getFactory()))
+                                         : translateRecursively(else_o);
+        return mk<ITE>(cond_n, then_n, else_n);
       }
 //      if (bind::isIntConst(exp)) {
         auto it = this->variableMap.find(exp);
@@ -580,6 +621,12 @@ namespace ufo {
     }
 
     Expr BV2LIAPass::InvariantTranslator::translateOperation(Expr e, ExprVector n_args) {
+      if (n_args.size() > 2) {
+        ExprVector nn_args(n_args.begin() + 1, n_args.end());
+        Expr subExpression = translateOperation(e, nn_args);
+        n_args.erase(n_args.begin() + 1, n_args.end());
+        n_args.push_back(subExpression);
+      }
       if (isOpX<EQ>(e)) { return mknary<EQ>(n_args); }
 
       if (isOpX<NEQ>(e)) { return mknary<NEQ>(n_args); }
@@ -597,6 +644,8 @@ namespace ufo {
       if (isOpX<MINUS>(e)) { return mknary<BSUB>(n_args); }
 
       if (isOpX<MULT>(e)) { return mknary<BMUL>(n_args); }
+
+      if (isOpX<IDIV>(e)) { return mknary<BUDIV>(n_args); }
 
       std::cerr << "Case not covered when translating operation from LIA to BV " << *e << std::endl;
       assert(false);
