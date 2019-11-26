@@ -134,11 +134,16 @@ namespace ufo {
           return VisitAction::changeDoKids(res);
         }
         if (isOpX<EQ>(e)) {
+//          std::cout << e << std::endl;
           Expr lhs = e->left();
           Expr rhs = e->right();
           bool varLhs = has(lhs);
           bool varRhs = has(rhs);
           if (varLhs || varRhs) {
+            if (varLhs && varRhs) {
+              Expr res = mk<EQ>(subMap.at(lhs), subMap.at(rhs));
+              return VisitAction::changeTo(res);
+            }
             Expr var = varLhs ? lhs : rhs;
             Expr other = varLhs ? rhs : lhs;
             if (isOpX<BOOL2BV>(other)) {

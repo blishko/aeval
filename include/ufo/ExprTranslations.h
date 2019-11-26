@@ -61,6 +61,7 @@ namespace expr {
       }
 
       Expr BV2LIATranslator::_bv2lia(Expr e) {
+//        std::cout << e << std::endl;
         {
           auto it = abstractionsMap.find(e);
           if (it != abstractionsMap.end()) { return it->second; }
@@ -76,7 +77,10 @@ namespace expr {
           return val;
         }
         if (is_bvconst(e) || is_bvvar(e)) {
-          assert(varMap.find(e) != varMap.end());
+          if (varMap.find(e) == varMap.end()) {
+            std::cerr << "Missing variable in varMap: " << e << std::endl;
+              assert(false);
+          }
           return varMap.at(e);
         }
         if (isOpX<FAPP>(e)) {
