@@ -11,6 +11,24 @@
 
 namespace ufo {
   namespace passes {
+
+    unsigned int binaryLog(mpz_class v) {
+      if (v.fits_ulong_p()) {
+        unsigned long v_ul = v.get_ui();
+        unsigned int res = 0;
+        while (v_ul >>= 1) { ++res; }
+        return res;
+      }
+      // TODO: implement this
+      throw std::logic_error("Not implemented yet!");
+    }
+
+    mpz_class power(unsigned long base, unsigned long exp) {
+      mpz_class res;
+      mpz_ui_pow_ui(res.get_mpz_t(), base, exp);
+      return res;
+    }
+
     struct DeconstructVariables {
 
       std::unique_ptr<CHCs> res;
@@ -302,6 +320,7 @@ namespace ufo {
       void translateVariables(const HornRuleExt & in, HornRuleExt & out);
       void translateBody(const HornRuleExt & in, HornRuleExt & out);
       void translateHead(const HornRuleExt & in, HornRuleExt & out);
+      void addRangeConstraints(const ufo::HornRuleExt &in, ufo::HornRuleExt &out);
 
       Expr translateVar(Expr var);
       TranslationResult translateGeneralExpression(Expr body);
@@ -363,6 +382,7 @@ namespace ufo {
         assert(isOpX<STRING>(clause.dstRelation));
         translated.dstRelation = clause.dstRelation;
         translated.srcRelations = clause.srcRelations;
+        addRangeConstraints(clause, translated);
       }
       return ret;
     }
@@ -440,6 +460,37 @@ namespace ufo {
       out.head = n_decl;
     }
 
+    void BV2LIAPass::addRangeConstraints(const ufo::HornRuleExt &in, ufo::HornRuleExt &out) {
+      ExprVector constraints;
+      auto& efac = in.body->getFactory();
+      Expr zero = mkTerm (mpz_class (0), efac);
+      auto varVecs = in.srcVars;
+      if (!in.isQuery) {
+        varVecs.push_back(in.dstVars);
+      }
+      for (auto const & varVec : varVecs) {
+        for (Expr var : varVec) {
+          assert(bind::isFapp(var));
+          Expr varDecl = var->first();
+          assert(bind::isFdecl(varDecl));
+          Expr varType = bind::type(varDecl);
+          if (!isBVSort(varType)) { continue; }
+          int width = bv::width(varType);
+          auto it = variableMap.find(var);
+          assert(it != variableMap.end());
+          Expr intVar = it->second;
+          Expr lowerBound = mk<LEQ>(zero, intVar);
+          mpz_class ubVal = power(2, width) - 1;
+          Expr ubValExpr = mkTerm(ubVal, efac);
+          Expr upperBound = mk<LEQ>(intVar, ubValExpr);
+          constraints.push_back(lowerBound);
+          constraints.push_back(upperBound);
+        }
+      }
+      constraints.push_back(out.body);
+      out.body = conjoin(constraints, efac);
+    }
+
     std::map<Expr, ExprVector> BV2LIAPass::translateInvVars(const map<Expr, ExprVector> & originals) {
       std::map<Expr, ExprVector> res;
       for (const auto& entry : originals) {
@@ -495,23 +546,6 @@ namespace ufo {
         Expr translatedInterpretation = translateRecursively(interpretation);
         res.insert(std::make_pair(translatedPredicate, translatedInterpretation));
       }
-      return res;
-    }
-
-    unsigned int binaryLog(mpz_class v) {
-      if (v.fits_ulong_p()) {
-        unsigned long v_ul = v.get_ui();
-        unsigned int res = 0;
-        while (v_ul >>= 1) { ++res; }
-        return res;
-      }
-      // TODO: implement this
-      throw std::logic_error("Not implemented yet!");
-    }
-
-    mpz_class power(unsigned long base, unsigned long exp) {
-      mpz_class res;
-      mpz_ui_pow_ui(res.get_mpz_t(), base, exp);
       return res;
     }
 
