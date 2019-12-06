@@ -43,7 +43,7 @@ namespace ufo
 
     NonlinCHCsolver (CHCs& r) : m_efac(r.m_efac), ruleManager(r), u(m_efac) {}
 
-    void setCandidates(map<Expr, ExprSet>& _candidates) { this->candidates = std::move(_candidates); }
+    void setCandidates(map<Expr, ExprSet> _candidates) { this->candidates = std::move(_candidates); }
 
     void getSolution(ExprMap& e, bool simplify = true)
     {
@@ -501,13 +501,29 @@ namespace ufo
       }
     }
 
-    bool filterAndSolve(map<Expr, ExprSet>& _candidates)
+    bool filterAndSolve(map<Expr, ExprSet> _candidates)
     {
+//      std::cout << "Candidates passed here: " << _candidates.size() << '\n';
+//      for (auto& entry : _candidates) {
+//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        for (auto& expr : entry.second) {
+//          std::cout << expr << '\n';
+//        }
+//        std::cout << std::endl;
+//      }
       setCandidates(_candidates);
       vector<HornRuleExt*> worklist;
       for (auto & hr : ruleManager.chcs) worklist.push_back(&hr); // todo: wto
 
       multiHoudini(worklist);
+//      std::cout << "After Houdini " << candidates.size() << '\n';
+//      for (auto& entry : candidates) {
+//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        for (auto& expr : entry.second) {
+//          std::cout << expr << '\n';
+//        }
+//        std::cout << std::endl;
+//      }
       return checkAllOver(true);
     }
 
