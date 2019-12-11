@@ -3577,8 +3577,9 @@ namespace ufo
 
   inline static bool evalLeq(Expr a, Expr b)
   {
-    if (isOpX<MPZ>(a) && isOpX<MPZ>(b))
-      return (lexical_cast<int>(a) <= lexical_cast<int>(b));
+    if (isOpX<MPZ>(a) && isOpX<MPZ>(b)) {
+      return getTerm<mpz_class>(a) <= getTerm<mpz_class>(b);
+    }
     else return (a == b); // GF: to extend
   }
 
