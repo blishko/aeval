@@ -188,7 +188,7 @@ namespace expr
       /* XXX Add helper methods as needed */
 
       inline Expr bvnot (Expr v) {return mk<BNOT> (v);}
-      inline Expr bvadd (Expr a, Expr b) { return mk<BADD> (a, b); }
+      inline Expr bvadd (Expr a, Expr b) { return mk<BADD> (a,b); }
       inline Expr bvule (Expr f, Expr s) { return mk<BULE> (f,s); }
       inline Expr bvuge (Expr f, Expr s) { return mk<BUGE> (f,s); }
       inline Expr bvult (Expr f, Expr s) { return mk<BULT> (f,s); }
@@ -197,7 +197,9 @@ namespace expr
       inline Expr bvsgt (Expr f, Expr s) { return mk<BSGT> (f,s); }
       inline Expr bvsle (Expr f, Expr s) { return mk<BSLE> (f,s); }
       inline Expr bvslt (Expr f, Expr s) { return mk<BSLT> (f,s); }
-      inline Expr frombool(Expr f)       { return mk<BOOL2BV>(f); }
+      inline Expr bvand (Expr f, Expr s) { return mk<BAND> (f,s); }
+      inline Expr bvor  (Expr f, Expr s) { return mk<BOR>  (f,s); }
+      inline Expr frombool(Expr f);
       inline Expr tobool(Expr f);
 
       inline bool isBVComparison(Expr e) {
@@ -225,6 +227,14 @@ namespace expr
       
       inline Expr zext (Expr v, unsigned width) 
       {return mk<BZEXT> (v, bvsort (width, v->efac ()));}
+
+      inline Expr frombool(Expr e) {
+        if (isOpX<BV2BOOL>(e)) { return e->first(); }
+        if (isOpX<NEG>(e)) {
+          return bvnot(frombool(e->first()));
+        }
+        return mk<BOOL2BV>(e);
+      }
 
       inline Expr tobool(Expr e) {
         if (isOpX<BOOL2BV>(e)) { return e->first(); }

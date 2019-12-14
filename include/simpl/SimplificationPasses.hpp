@@ -170,6 +170,13 @@ namespace ufo {
             }
           }
         }
+        if (isOpX<BOOL2BV>(e)) {
+          ExprFactory& efac = e->getFactory();
+          Expr bvone = bv::bvnum(mkTerm (mpz_class (1), efac), bv::bvsort(1, efac));
+          Expr bvzero = bv::bvnum(mkTerm (mpz_class (0), efac), bv::bvsort(1, efac));
+          Expr res = mk<ITE>(e->first(), bvone, bvzero);
+          return VisitAction::changeDoKids(res);
+        }
         // TODO: add cases as needed, or default to var_bv <=> ite(var_bool, 1, 0)
         return VisitAction::doKids();
       }

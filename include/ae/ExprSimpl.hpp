@@ -32,14 +32,14 @@ namespace ufo
 
   static Expr mkNeg(Expr term);
 
-  template<typename Range> static Expr conjoin(Range& conjs, ExprFactory &efac){
+  template<typename Range> static Expr conjoin(Range const& conjs, ExprFactory &efac){
     return
     (conjs.size() == 0) ? mk<TRUE>(efac) :
     (conjs.size() == 1) ? *conjs.begin() :
     mknary<AND>(conjs);
   }
 
-  template<typename Range> static Expr disjoin(Range& disjs, ExprFactory &efac){
+  template<typename Range> static Expr disjoin(Range const & disjs, ExprFactory &efac){
     return
     (disjs.size() == 0) ? mk<FALSE>(efac) :
     (disjs.size() == 1) ? *disjs.begin() :
@@ -1035,10 +1035,11 @@ namespace ufo
       one = mkTerm (mpz_class(1), efac);
     };
 
+    // This is intended to use with RW visitor, so it assumes the kids have been processed already
     Expr operator() (Expr exp)
     {
+//      std::cout << exp << std::endl;
       getBitWidth(exp);
-//      std::cout << *exp << std::endl;
       if (isOpX<BEXTRACT>(exp)) {
         if (bv::high(exp) == 0 && bv::low(exp)== 0)
         {
@@ -1096,8 +1097,16 @@ namespace ufo
       }
       if (isOpX<BNOT>(exp))
       {
-        if (isOpX<BOOL2BV>(exp->first())) {
-          Expr ret = bv::frombool(mkNeg(exp->first()->first()));
+        Expr arg = exp->first();
+        if (isOpX<BOOL2BV>(arg)) {
+          Expr ret = bv::frombool(mkNeg(arg->first()));
+          bitwidths[ret] = 1;
+          return ret;
+        }
+//        std::cerr << exp << std::endl;
+        auto it = bitwidths.find(arg);
+        if (it != bitwidths.end() && it->second == 1) {
+          Expr ret = bv::frombool(mkNeg(bv::tobool(arg)));
           bitwidths[ret] = 1;
           return ret;
         }
@@ -1120,7 +1129,7 @@ namespace ufo
           }
         }
       }
-      if (isOpX<BOR>(exp))
+      if (isOpX<BOR>(exp) && exp->arity() == 2)
       {
         auto it = bitwidths.find(exp);
         if (it != bitwidths.end() && it->second == 1)
@@ -1129,7 +1138,7 @@ namespace ufo
           Expr right = exp->right();
           assert(bitwidths.find(left) != bitwidths.end() && bitwidths.find(left)->second == 1);
           assert(bitwidths.find(right) != bitwidths.end() && bitwidths.find(right)->second == 1);
-          Expr res = bv::frombool(mk<OR>(bv::tobool(left), bv::tobool(right)));
+          Expr res = bv::frombool(disjoin(ExprVector{bv::tobool(left), bv::tobool(right)}, efac));
           bitwidths[res] = 1;
           return res;
         }
@@ -1202,6 +1211,17 @@ namespace ufo
         }
       }
       if (isOpX<AND>(exp)) {
+        auto bwit = bitwidths.find(exp);
+        if (bwit != bitwidths.end() && bwit->second == 1 && exp->arity() == 2)
+        {
+          Expr left = exp->left();
+          Expr right = exp->right();
+          assert(bitwidths.find(left) != bitwidths.end() && bitwidths.find(left)->second == 1);
+          assert(bitwidths.find(right) != bitwidths.end() && bitwidths.find(right)->second == 1);
+          Expr res = bv::frombool(conjoin(ExprVector{bv::tobool(left), bv::tobool(right)}, efac));
+          bitwidths[res] = 1;
+          return res;
+        }
         ExprSet conjuncts;
         getConj(exp, conjuncts);
         ExprVector conjVec(conjuncts.begin(), conjuncts.end());
@@ -1309,7 +1329,8 @@ namespace ufo
         bitwidths[e] = bv::width(sort);
         return;
       }
-      if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)) // TODO: add all
+      if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)
+          || isOpX<BMUL>(e)) // TODO: add all; check BVMUL!
       {
         Expr e1 = e->left();
         Expr e2 = e->right();
