@@ -300,8 +300,9 @@ namespace expr
             bitwidths[e] = bv::width(sort);
           }
           else if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)
+              || isOpX<BMUL>(e) || isOpX<BUREM>(e)
               || isOpX<BUGE>(e) || isOpX<BUGT>(e) || isOpX<BULE>(e) || isOpX<BULT>(e)
-              || isOpX<BSHL>(e) || isOpX<BLSHR>(e) || isOpX<BASHR>(e)
+              || isOpX<BSHL>(e) || isOpX<BLSHR>(e) || isOpX<BASHR>(e) || isOpX<BXOR>(e)
               ) // TODO: add all
           {
             Expr e1 = e->left();
@@ -312,7 +313,7 @@ namespace expr
 
             bitwidths[e] = bitwidths[e1];
           }
-          else if (isOpX<BNOT>(e)) {
+          else if (isOpX<BNOT>(e) || isOpX<BNEG>(e)) {
             Expr arg = e->first();
             assert(bitwidths.find(arg) != bitwidths.end());
             bitwidths[e] = bitwidths[arg];
@@ -352,9 +353,9 @@ namespace expr
             return e;
           }
           else {
-            std::cerr << "Warning! Operation not covered in computing bitwidths of expression: "<< *e << "\n";
+            std::cerr << "Warning! Operation not covered in computing bitwidths of expression: "<< e << "\n";
             assert(false);
-            throw std::logic_error("Operation not covered in computing bitwidths of expression!");
+            throw std::logic_error("Operation not covered in computing bitwidths of expression!\n at " + std::string(__FILE__) + ":" + std::to_string(__LINE__));
           }
           return e;
         }

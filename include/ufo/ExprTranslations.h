@@ -119,6 +119,36 @@ namespace expr {
           Expr bound = getUpperBoundForBitWidthExpr(width, e->getFactory());
           return mk<ITE>(mk<LT>(minus, mkTerm(mpz_class(0), e->getFactory())), mk<PLUS>(minus, bound), minus);
         }
+        if (isOpX<BMUL>(e)) {
+          assert(e->arity() == 2);
+          Expr left = e->left();
+          Expr right = e->right();
+          bool hasConstant = bv::is_bvnum(left) || bv::is_bvnum(right);
+          if (hasConstant) {
+            return mk<MULT>(left, right);
+          }
+         // We need to abstract away
+         return getOrCreateAbstractionVariableFor(e);
+        }
+        if (isOpX<BUREM>(e)) {
+          assert(e->arity() == 2);
+          Expr left = e->left();
+          Expr right = e->right();
+          bool isRightConst = bv::is_bvnum(right);
+          if (isRightConst) {
+            return mk<DIV>(left, right);
+          }
+          // We need to abstract away
+          return getOrCreateAbstractionVariableFor(e);
+        }
+        if (isOpX<BNEG>(e)) {
+          assert(e->arity() == 1);
+          // Unary minus through 2's complement
+          Expr arg = e->first();
+          auto width = bitwidths.at(arg);
+          Expr bound = getUpperBoundForBitWidthExpr(width, e->getFactory());
+          return mk<NEG>(bound, arg);
+        }
         if (isOpX<BSHL>(e)) {
           assert(e->arity() == 2);
           Expr left = e->left();
@@ -126,9 +156,9 @@ namespace expr {
           bool isShiftByConst = bv::is_bvnum(right);
           if (isShiftByConst) {
             mpz_class exp = getTerm<mpz_class>(right->first());
-            if (mpz_fits_uint_p(exp.get_mpz_t()) == 0) { goto fallback; }
+            if (mpz_fits_uint_p(exp.get_mpz_t()) == 0) { goto fallbacklsh; }
             auto exp_small = exp.get_ui();
-            if (exp_small >= bitwidths.at(left)) { goto fallback; }
+            if (exp_small >= bitwidths.at(left)) { goto fallbacklsh; }
             // It is shift by a sufficiently small number, we can represent this as multiplication
             mpz_class val = power(2, exp_small);
             // ITE to take overflow into accout
@@ -139,7 +169,27 @@ namespace expr {
             Expr var = getOrCreateAbstractionVariableFor(mult);
             return mk<ITE>(mk<GEQ>(mult, upperBound), var, mult);
           }
-          fallback:
+          fallbacklsh:
+          // Just abstract the whole epression away
+          return getOrCreateAbstractionVariableFor(e);
+        }
+        if (isOpX<BLSHR>(e)) {
+          assert(e->arity() == 2);
+          Expr left = e->left();
+          Expr right = e->right();
+          bool isShiftByConst = bv::is_bvnum(right);
+          if (isShiftByConst) {
+            mpz_class exp = getTerm<mpz_class>(right->first());
+            if (mpz_fits_uint_p(exp.get_mpz_t()) == 0) { goto fallbacklshr; }
+            auto exp_small = exp.get_ui();
+            if (exp_small >= bitwidths.at(left)) { goto fallbacklshr; }
+            // It is shift by a sufficiently small number, we can represent this as multiplication
+            mpz_class val = power(2, exp_small);
+            // ITE to take overflow into accout
+            Expr divExpr = mk<DIV>(left, mkTerm(val, e->getFactory()));
+            return divExpr;
+          }
+          fallbacklshr:
           // Just abstract the whole epression away
           return getOrCreateAbstractionVariableFor(e);
         }
@@ -155,7 +205,7 @@ namespace expr {
         if (isOpX<BULT>(e)) {
           return mk<LT>(e->left(), e->right());
         }
-        if (isOpX<BAND>(e) || isOpX<BOR>(e)) {
+        if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BXOR>(e)) {
           // MB: abstract for now
           return getOrCreateAbstractionVariableFor(e);
         }
@@ -212,8 +262,8 @@ namespace expr {
           return e;
         }
         // MB: add cases if necessary
-        std::cout << "Case not covered yet: " << *e << std::endl;
-        throw std::logic_error("Expression not covered in translation from BV to LIA!");
+        std::cerr << "Case not covered yet: " << e << std::endl;
+        throw std::logic_error("Expression not covered in translation from BV to LIA!" + std::string(__FILE__) + "line " + std::to_string(__LINE__));
         return e;
       }
     }
