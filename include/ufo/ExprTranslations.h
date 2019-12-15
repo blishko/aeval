@@ -147,7 +147,7 @@ namespace expr {
           Expr arg = e->first();
           auto width = bitwidths.at(arg);
           Expr bound = getUpperBoundForBitWidthExpr(width, e->getFactory());
-          return mk<NEG>(bound, arg);
+          return mk<MINUS>(bound, arg);
         }
         if (isOpX<BSHL>(e)) {
           assert(e->arity() == 2);
