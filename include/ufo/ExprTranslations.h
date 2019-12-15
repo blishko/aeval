@@ -17,6 +17,14 @@ namespace expr {
         return res;
       }
 
+      mpz_class getUpperBoundForBitWidth(long width) {
+        return power(2, width);
+      }
+
+      Expr getUpperBoundForBitWidthExpr(long width, ExprFactory& fact) {
+        return mkTerm(getUpperBoundForBitWidth(width), fact);
+      }
+
       class BV2LIATranslator
       {
       public:
@@ -40,6 +48,14 @@ namespace expr {
         std::string getFreshName() {
           return std::string("BV2LIA_abs_") + std::to_string(freshCounter++);
         }
+
+        Expr getOrCreateAbstractionVariableFor(Expr e) {
+          auto it = abstractionsMap.find(e);
+          if (it != abstractionsMap.end()) { return it->second; }
+          Expr fresh = bind::intConst(mkTerm<std::string>(getFreshName(), e->getFactory()));
+          abstractionsMap.insert(std::make_pair(e, fresh));
+          return fresh;
+        }
       };
 
       class BV2LIAVisitor {
@@ -62,10 +78,10 @@ namespace expr {
 
       Expr BV2LIATranslator::_bv2lia(Expr e) {
 //        std::cout << e << std::endl;
-        {
-          auto it = abstractionsMap.find(e);
-          if (it != abstractionsMap.end()) { return it->second; }
-        }
+//        {
+//          auto it = abstractionsMap.find(e);
+//          if (it != abstractionsMap.end()) { return it->second; }
+//        }
         if (isOpX<AND>(e) || isOpX<OR>(e) || isOpX<NEG>(e) || isOpX<EQ>(e) || isOpX<NEQ>(e) || isOpX<ITE>(e)
             || bind::isBoolConst(e) || bind::isIntConst(e)
           )
@@ -91,10 +107,8 @@ namespace expr {
           auto wit = bitwidths.find(e);
           assert(wit != bitwidths.end());
           int width = wit->second;
-          mpz_class upperBound;
-          mpz_ui_pow_ui(upperBound.get_mpz_t(), 2, width);
+          Expr bound = getUpperBoundForBitWidthExpr(width, e->getFactory());
           Expr plus = mk<PLUS>(e->left(), e->right());
-          Expr bound = mkTerm(upperBound, e->getFactory());
           return mk<ITE>(mk<GEQ>(plus, bound), mk<MINUS>(plus, bound), plus);
         }
         if (isOpX<BSUB>(e)) {
@@ -102,10 +116,32 @@ namespace expr {
           auto wit = bitwidths.find(e);
           assert(wit != bitwidths.end());
           int width = wit->second;
-          mpz_class upperBound;
-          mpz_ui_pow_ui(upperBound.get_mpz_t(), 2, width);
-          Expr bound = mkTerm(upperBound, e->getFactory());
+          Expr bound = getUpperBoundForBitWidthExpr(width, e->getFactory());
           return mk<ITE>(mk<LT>(minus, mkTerm(mpz_class(0), e->getFactory())), mk<PLUS>(minus, bound), minus);
+        }
+        if (isOpX<BSHL>(e)) {
+          assert(e->arity() == 2);
+          Expr left = e->left();
+          Expr right = e->right();
+          bool isShiftByConst = bv::is_bvnum(right);
+          if (isShiftByConst) {
+            mpz_class exp = getTerm<mpz_class>(right->first());
+            if (mpz_fits_uint_p(exp.get_mpz_t()) == 0) { goto fallback; }
+            auto exp_small = exp.get_ui();
+            if (exp_small >= bitwidths.at(left)) { goto fallback; }
+            // It is shift by a sufficiently small number, we can represent this as multiplication
+            mpz_class val = power(2, exp_small);
+            // ITE to take overflow into accout
+            Expr mult = mk<MULT>(left, mkTerm(val, e->getFactory()));
+            int width = bitwidths.at(left);
+            Expr upperBound = getUpperBoundForBitWidthExpr(width, e->getFactory());
+            // abstraction
+            Expr var = getOrCreateAbstractionVariableFor(mult);
+            return mk<ITE>(mk<GEQ>(mult, upperBound), var, mult);
+          }
+          fallback:
+          // Just abstract the whole epression away
+          return getOrCreateAbstractionVariableFor(e);
         }
         if (isOpX<BUGE>(e)) {
           return mk<GEQ>(e->left(), e->right());
@@ -119,11 +155,9 @@ namespace expr {
         if (isOpX<BULT>(e)) {
           return mk<LT>(e->left(), e->right());
         }
-        if (isOpX<BAND>(e)) {
+        if (isOpX<BAND>(e) || isOpX<BOR>(e)) {
           // MB: abstract for now
-          Expr var = bind::intConst(mkTerm<std::string>(getFreshName(), e->getFactory()));
-          abstractionsMap[e] = var;
-          return var;
+          return getOrCreateAbstractionVariableFor(e);
         }
         if (isOpX<BEXTRACT>(e)) {
           auto it = bitwidths.find(bv::earg(e));
@@ -166,9 +200,7 @@ namespace expr {
           }
           // For now, abstract away with a fresh variable
 //          std::cout << "Warning! Abstracting away bvconcat expression " << *e << std::endl;
-          Expr var = bind::intConst(mkTerm<std::string>(getFreshName(), e->getFactory()));
-          abstractionsMap[e] = var;
-          return var;
+          return getOrCreateAbstractionVariableFor(e);
         }
         if (isOp<FDECL>(e)) {
           auto iter = declsMap.find(e);
