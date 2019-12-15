@@ -468,13 +468,11 @@ namespace ufo {
     }
 
     void BV2LIAPass::addRangeConstraints(const ufo::HornRuleExt &in, ufo::HornRuleExt &out) {
+      if (in.isQuery) { return; } // No need for adding constraints to the query, if they are added to each transitions
       ExprVector constraints;
       auto& efac = in.body->getFactory();
       Expr zero = mkTerm (mpz_class (0), efac);
       auto varVecs = in.srcVars;
-      if (!in.isQuery) {
-        varVecs.push_back(in.dstVars);
-      }
       for (auto const & varVec : varVecs) {
         for (Expr var : varVec) {
           assert(bind::isFapp(var));
