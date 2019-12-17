@@ -11,19 +11,20 @@ namespace ufo
 {
   inline void solve(string smt, bool spacer)
   {
-    const unsigned timeout_seconds = 1;
+    const unsigned timeout_seconds = 5;
     const unsigned timeout_milisecs = timeout_seconds * 1000; // in miliseconds
     ExprFactory m_efac;
     EZ3 z3(m_efac);
     CHCs ruleManager(m_efac, z3);
     ruleManager.parse(smt);
+//    outs() << "After parsing:\n";
 //    ruleManager.print();
     CHCs original(ruleManager);
     ruleManager.simplifyCHCSystemSyntactically();
 //    outs() << "After simplification:\n";
 //    ruleManager.print();
-//    outs () << "After slicing:\n";
     ruleManager.slice();
+//    outs () << "After slicing:\n";
 //    ruleManager.print();
     passes::BV1ToBool cleanup_pass;
     cleanup_pass(ruleManager);
@@ -32,34 +33,8 @@ namespace ufo
 //    current->print();
     passes::ITESimplificationPass itepass;
     itepass(*current);
-//    current->print();
-//    auto sol = current->solve(1);
-//    if (!sol.empty()) {
-//      std::cout << "Solution for simplified system found!" << std::endl;
-//      for (auto& s : sol) {
-//        std::cout << *s.first << " : " << *s.second << std::endl;
-//      }
-      // translate solution to the original system
-//      sol = cleanup_pass.getInvariantTranslation().getOriginalSolution(sol);
-//      std::map<Expr, ExprSet> candidates;
-//      for (auto& s : sol) {
-//        std::cout << *s.first << " : " << *s.second << std::endl;
-//        candidates.insert(std::make_pair(bind::fname(s.first), ExprSet{s.second}));
-//      }
-//      NonlinCHCsolver nonlin (original);
-//      nonlin.candidates = candidates;
-//      vector<HornRuleExt*> worklist;
-//      for (auto & hr : current->chcs) worklist.push_back(&hr);
-//      nonlin.multiHoudini(worklist);
-//      if(nonlin.checkAllOver(true)) {
-//        std::cout << "Solved!\n";
-//        exit(2);
-//      }
-//      else {
-//        std::cout << "Somepart of invariant does not work\n";
-//      }
-//    }
     if (current->hasBV) {
+      CHCs* lastBVSystem = current;
       passes::BV2LIAPass bv2lia;
       bv2lia(*current);
       current = bv2lia.getTransformed();
@@ -72,16 +47,76 @@ namespace ufo
       }
       else
       {
+        // MB: First try to find some useful invariants with FreqHorn
         NonlinCHCsolver liaSyst(*current);
-        if (liaSyst.guessAndSolve())
+//        std::cout << "Running guessAndSolve\n" << std::endl;
+        const bool invariantFound = liaSyst.guessAndSolve(false); // MB: not necessarily safe invariant!
+//        std::cout << "guessAndSolve finished" << std::endl;
+        if (invariantFound)
         {
-          liaSyst.getSolution(solution);
+          liaSyst.getSolution(solution, false);
+          if (liaSyst.checkQuery(solution)) {
+            // It is a safe invariant for LIA translation, no need to do additional work on LIA representation
+          }
+          else {
+            // strengthen and run spacer?
+            current->strengthenWithInvariants(solution);
+            auto spacerSolution = current->solve(timeout_milisecs);
+            if (!spacerSolution.empty()) {
+              solution = spacerSolution; // MB: or combine them together?
+            }
+          }
+          // solution contains some invariants that can be used to strengthen the transition relation
+          // Translate to BV and check if they are invariants there
+          auto invariantTranslator = bv2lia.getInvariantTranslator();
+          auto translated = invariantTranslator.translateInvariant(solution);
+//          std::cout << "Translated solution:\n";
+//            for (auto const& entry : translated) {
+//            std::cout << *entry.first << " - " << *entry.second << '\n';
+//            }
+          {
+            map<Expr, ExprSet> candidates;
+            for (auto& s : translated) {
+              ExprSet tmp;
+              getConj(s.second, tmp);
+              candidates.insert(std::make_pair(bind::fname(s.first), tmp));
+            }
+            NonlinCHCsolver bvsolver (*lastBVSystem);
+            bool invariantsFound = bvsolver.filterAndSolve(candidates, false); // We do not care if the invariant is safe
+            if (invariantFound) {
+              // BV invariant, let's add it to the transition relations, see if it simplifies anything
+              ExprMap bvInvariants;
+              bvsolver.getSolution(bvInvariants);
+              // TEST if it is not safe invariant
+              bvsolver.setCandidates(bvInvariants);
+              if (bvsolver.checkAllOver(true)) {
+                std::cout << "Safe Invariant found!" << std::endl;
+                exit(0);
+              }
+              // Not Safe invariant, so strengthen and continue
+              lastBVSystem->strengthenWithInvariants(bvInvariants);
+//              lastBVSystem->print();
+              auto bvsolution = lastBVSystem->solve(timeout_milisecs);
+              if(!bvsolution.empty()) {
+                std::cout << "BV solution found after strengthening with invariants from LIA\n";
+              }
+              else{
+                std::cout << "UNKNOW" << std::endl;
+              }
+            }
+            else {
+              // No new invariant learnt
+              std::cout << "UNKNOW" << std::endl;
+            }
+          }
         }
         else
         {
+          std::cout << "Guess and solve failed!" << std::endl;
           // TODO: counterexample (using liaSyst.solveIncrementally)
           exit(0);
         }
+        exit(0);
       }
       if (!solution.empty()) {
 //        std::cout << "Solution in LIA found!\n";
@@ -107,8 +142,11 @@ namespace ufo
           std::cout << "Solved!\n";
         }
         else {
-          std::cout << "Somepart of invariant does not work\n";
+          std::cout << "Some part of invariant does not work\n";
         }
+      }
+      else {
+        std::cout << "LIA Spacer found counterexample" << std::endl;
       }
     }
   };

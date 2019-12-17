@@ -659,6 +659,30 @@ namespace ufo
       RW<SimplifyBVExpr> rw (new SimplifyBVExpr(e->getFactory(), bitwidths));
       return dagVisit(rw, e);
     }
+
+    void strengthenWithInvariants(ExprMap const& invariants) {
+      for (auto & chc: this->chcs) {
+        // inspiration from check CHC
+        ExprSet newBody;
+        newBody.insert(chc.body);
+        for (int i = 0; i < chc.srcRelations.size(); i++)
+        {
+          Expr rel = chc.srcRelations[i];
+          ExprSet lms = {invariants.at(rel)};
+          Expr substInvariants = replaceAll(conjoin(lms, m_efac), this->invVars[rel], chc.srcVars[i]);
+          getConj(substInvariants, newBody);
+        }
+        if (!chc.isQuery)
+        {
+          Expr rel = chc.dstRelation;
+          Expr lms = invariants.at(rel);
+          Expr substInvariants = replaceAll(lms, this->invVars[rel], chc.dstVars);
+          getConj(substInvariants, newBody);
+        }
+        chc.body = conjoin(newBody, this->m_efac);
+      }
+
+    }
   };
 }
 #endif
