@@ -3678,14 +3678,15 @@ namespace ufo
     }
 
 
+    ExprSet newIneqs;
     for (auto & z : eqs)
     {
       for (auto & in : ineqs)
       {
         //if (bnd > guesses.size()) return;
         if (!emptyIntersect(z, in)) continue;
-        ineqs.insert(mk<LEQ>(mk<PLUS>(in->left(), z->left()), mk<PLUS>(in->right(), z->right())));
-        ineqs.insert(mk<LEQ>(mk<PLUS>(in->left(), z->right()), mk<PLUS>(in->right(), z->left())));
+        newIneqs.insert(mk<LEQ>(mk<PLUS>(in->left(), z->left()), mk<PLUS>(in->right(), z->right())));
+        newIneqs.insert(mk<LEQ>(mk<PLUS>(in->left(), z->right()), mk<PLUS>(in->right(), z->left())));
       }
 
       for (auto & d : disjs)
@@ -3710,6 +3711,8 @@ namespace ufo
       }
     }
 
+    ineqs.insert(newIneqs.begin(), newIneqs.end());
+    newIneqs.clear();
     guesses.insert(ineqs.begin(), ineqs.end());
 
     for (auto & e : eqs)
