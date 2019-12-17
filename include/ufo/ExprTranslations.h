@@ -193,16 +193,16 @@ namespace expr {
           // Just abstract the whole epression away
           return getOrCreateAbstractionVariableFor(e);
         }
-        if (isOpX<BUGE>(e)) {
+        if (isOpX<BUGE>(e) || isOpX<BSGE>(e)) {
           return mk<GEQ>(e->left(), e->right());
         }
-        if (isOpX<BUGT>(e)) {
+        if (isOpX<BUGT>(e) || isOpX<BSGT>(e)) {
           return mk<GT>(e->left(), e->right());
         }
-        if (isOpX<BULE>(e)) {
+        if (isOpX<BULE>(e) || isOpX<BSLE>(e)) {
           return mk<LEQ>(e->left(), e->right());
         }
-        if (isOpX<BULT>(e)) {
+        if (isOpX<BULT>(e) || isOpX<BSLT>(e)) {
           return mk<LT>(e->left(), e->right());
         }
         if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BXOR>(e)) {

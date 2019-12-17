@@ -188,6 +188,7 @@ namespace expr
       /* XXX Add helper methods as needed */
 
       inline Expr bvnot (Expr v) {return mk<BNOT> (v);}
+      inline Expr bvneg (Expr v) {return mk<BNEG> (v);}
       inline Expr bvadd (Expr a, Expr b) { return mk<BADD> (a,b); }
       inline Expr bvule (Expr f, Expr s) { return mk<BULE> (f,s); }
       inline Expr bvuge (Expr f, Expr s) { return mk<BUGE> (f,s); }
@@ -302,6 +303,7 @@ namespace expr
           else if (isOpX<BAND>(e) || isOpX<BOR>(e) || isOpX<BADD>(e) || isOpX<BSUB>(e)
               || isOpX<BMUL>(e) || isOpX<BUREM>(e)
               || isOpX<BUGE>(e) || isOpX<BUGT>(e) || isOpX<BULE>(e) || isOpX<BULT>(e)
+              || isOpX<BSGE>(e) || isOpX<BSGT>(e) || isOpX<BSLE>(e) || isOpX<BSLT>(e)
               || isOpX<BSHL>(e) || isOpX<BLSHR>(e) || isOpX<BASHR>(e) || isOpX<BXOR>(e)
               ) // TODO: add all
           {

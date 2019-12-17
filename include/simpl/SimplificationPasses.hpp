@@ -350,6 +350,7 @@ namespace ufo {
       // translate incms
       // TODO: test what is the key
       liaSystem.incms = system.incms;
+      liaSystem.qCHCNum = system.qCHCNum;
     }
 
     ExprSet BV2LIAPass::translateDeclarations(const ExprSet & originals) {
@@ -592,6 +593,13 @@ namespace ufo {
 //            return bv::extract(opBitWidth - 1, exponent, n_args[0]);
 //          }
 //        }
+        if (isOpX<MULT>(exp) && exp->arity() == 2) {
+          Expr left = exp->left();
+          Expr right = exp->right();
+          auto isMinusOne = [](Expr e) -> bool { return bind::IsHardIntConst{}(e) && getTerm<mpz_class>(e) == -1; };
+          if (isMinusOne(left)) { return bv::bvneg(translateRecursively(right)); }
+          if (isMinusOne(right)) { return bv::bvneg(translateRecursively(left)); }
+        }
 
         Expr res = translateOperation(exp, n_args);
         return res;
@@ -675,7 +683,8 @@ namespace ufo {
 
       if (isOpX<NEQ>(e)) { return mknary<NEQ>(n_args); }
 
-      if (isOpX<LEQ>(e)) { return mknary<BULE>(n_args); }
+      // MB: This transformation is meant for translating candidate invariants, that's why we translate with AND: to get both candidates
+      if (isOpX<LEQ>(e)) { return mk<AND>(mknary<BULE>(n_args), mknary<BSLE>(n_args)); }
 
       if (isOpX<GEQ>(e)) { return mknary<BUGE>(n_args); }
 
