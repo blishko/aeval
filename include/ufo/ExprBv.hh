@@ -11,6 +11,20 @@ namespace expr
   {
     namespace bv
     {
+      mpz_class power(unsigned long base, unsigned long exp) {
+        mpz_class res;
+        mpz_ui_pow_ui(res.get_mpz_t(), base, exp);
+        return res;
+      }
+
+      mpz_class getUpperBoundForBitWidth(long width) {
+        return power(2, width);
+      }
+
+      Expr getUpperBoundForBitWidthExpr(long width, ExprFactory& fact) {
+        return mkTerm(getUpperBoundForBitWidth(width), fact);
+      }
+
       struct BvSort
       {
         unsigned m_width;

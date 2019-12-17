@@ -23,12 +23,6 @@ namespace ufo {
       throw std::logic_error("Not implemented yet!");
     }
 
-    mpz_class power(unsigned long base, unsigned long exp) {
-      mpz_class res;
-      mpz_ui_pow_ui(res.get_mpz_t(), base, exp);
-      return res;
-    }
-
     struct DeconstructVariables {
 
       std::unique_ptr<CHCs> res;
