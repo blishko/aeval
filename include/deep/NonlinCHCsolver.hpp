@@ -44,6 +44,14 @@ namespace ufo
     NonlinCHCsolver (CHCs& r) : m_efac(r.m_efac), ruleManager(r), u(m_efac) {}
 
     void setCandidates(map<Expr, ExprSet> _candidates) { this->candidates = std::move(_candidates); }
+    void setCandidates(ExprMap const & _candidates)
+    {
+      map<Expr, ExprSet> tmp;
+      for (auto & entry : _candidates) {
+        tmp.insert(std::make_pair(entry.first, ExprSet{entry.second}));
+      }
+      this->candidates = std::move(tmp);
+    }
 
     void getSolution(ExprMap& e, bool simplify = true)
     {
@@ -86,6 +94,15 @@ namespace ufo
         if (!checkCHC(hr, candidates)) return false;
       }
       return true;
+    }
+
+    bool checkQuery (map<Expr, Expr>& candidateInvariants) {
+      auto& query = ruleManager.chcs[ruleManager.qCHCNum];
+      map<Expr, ExprSet> tmp;
+      for (auto const& entry : candidateInvariants) {
+        tmp.insert(std::make_pair(entry.first, ExprSet{entry.second}));
+      }
+      return checkCHC(query, tmp);
     }
 
     bool checkCHC (HornRuleExt& hr, map<Expr, ExprSet>& annotations)
@@ -501,7 +518,7 @@ namespace ufo
       }
     }
 
-    bool filterAndSolve(map<Expr, ExprSet> _candidates)
+    bool filterAndSolve(map<Expr, ExprSet> _candidates, bool checkQuery = true)
     {
 //      std::cout << "Candidates passed here: " << _candidates.size() << '\n';
 //      for (auto& entry : _candidates) {
@@ -524,13 +541,21 @@ namespace ufo
 //        }
 //        std::cout << std::endl;
 //      }
-      return checkAllOver(true);
+      return checkAllOver(checkQuery);
     }
 
     // very restricted version of FreqHorn (no grammars, limited use of arrays)
-    bool guessAndSolve()
+    bool guessAndSolve(bool checkQuery = false)
     {
       bootstrapping();
+//      std::cout << "Bootstrapping candidates:" << std::endl;
+//      for (auto& entry : candidates) {
+//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        for (auto& expr : entry.second) {
+//          std::cout << expr << '\n';
+//        }
+//        std::cout << std::endl;
+//      }
 
       auto post = candidates;
       filterUnsat();
@@ -540,19 +565,30 @@ namespace ufo
       for (auto & hr : ruleManager.chcs) worklist.push_back(&hr); // todo: wto
 
       multiHoudini(worklist);
-      if (checkAllOver(true)) { return true; }
+
+//      std::cout << "First multiHoudini finished!" << std::endl;
+//      std::cout << "After Houdini " << candidates.size() << '\n';
+//      for (auto& entry : candidates) {
+//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        for (auto& expr : entry.second) {
+//          std::cout << expr << '\n';
+//        }
+//        std::cout << std::endl;
+//      }
+
+      if (checkAllOver(checkQuery)) { return true; }
 
       candidates.clear();
       getImplicationGuesses(post);
       filterUnsat();
       multiHoudini(worklist);
-      if (checkAllOver(true)) { return true; }
+      if (checkAllOver(checkQuery)) { return true; }
 
       candidates.clear();
       for (auto tgt : ruleManager.decls) arrayGuessing(tgt->left());
       filterUnsat();
       multiHoudini(worklist);
-      if (checkAllOver(true)) { return true; }
+      if (checkAllOver(checkQuery)) { return true; }
       return false;
     }
 
