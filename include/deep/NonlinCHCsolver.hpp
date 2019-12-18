@@ -82,7 +82,6 @@ namespace ufo
           newCond = mk<TRUE>(m_efac);
         }
       }
-
       return newCond;
     }
 
@@ -130,7 +129,7 @@ namespace ufo
       return bool(!u.isSat(checkList));
     }
 
-    void preproGuessing(Expr e, ExprVector& ev1, ExprVector& ev2, ExprSet& guesses, bool useBV=false)
+    void preproGuessing(Expr e, ExprVector& ev1, ExprVector& ev2, ExprSet& guesses/*, bool useBV=false*/)
     {
       ExprSet ev3;
       filter (e, bind::IsConst (), inserter (ev3, ev3.begin())); // prepare vars
@@ -165,7 +164,7 @@ namespace ufo
           if (newDsjs.size() > 0) e = replaceAll(e, c2, disjoin(newDsjs, m_efac));
         }
       }
-      if (useBV) {
+      if (ruleManager.hasBV) {
         mutateHeuristicBV(replaceAll(e, ev1, ev2), guesses);
       }
       else {
@@ -189,7 +188,7 @@ namespace ufo
               vars.insert(hr.locVars.begin(), hr.locVars.end());
               Expr q = quantifierElimination(hr.body, vars); //we shouldn't do it here; to fix
               preproGuessing(mkNeg(q), hr.srcVars[i],
-                             ruleManager.invVars[hr.srcRelations[i]], candidates[hr.srcRelations[i]], ruleManager.hasBV);
+                             ruleManager.invVars[hr.srcRelations[i]], candidates[hr.srcRelations[i]]);
               if (!candidates[hr.srcRelations[i]].empty()) propProgress.erase(hr.srcRelations[i]); // for stats
             }
           }
@@ -257,13 +256,13 @@ namespace ufo
             // simple invariant check (for speed, need to be enhanced)
             if (u.implies (conjoin(tmp, m_efac), replaceAll(newGuess, ruleManager.invVars[rel], r.dstVars)))
             {
-        candidates[rel].insert(newGuess);
+              candidates[rel].insert(newGuess);
               ExprSet newPost;
               tmp.push_back(mkNeg(replaceAll(pre, ruleManager.invVars[rel], r.dstVars)));
               preproGuessing(conjoin(tmp, m_efac), r.dstVars, ruleManager.invVars[rel], newPost);
               for (auto & a : newPost)
               {
-          candidates[rel].insert(mk<IMPL>(mk<NEG>(pre), a));
+                candidates[rel].insert(mk<IMPL>(mk<NEG>(pre), a));
               }
             }
           }
@@ -520,26 +519,26 @@ namespace ufo
 
     bool filterAndSolve(map<Expr, ExprSet> _candidates, bool checkQuery = true)
     {
-//      std::cout << "Candidates passed here: " << _candidates.size() << '\n';
+//      outs() << "Candidates passed here: " << _candidates.size() << '\n';
 //      for (auto& entry : _candidates) {
-//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        outs() << entry.first << " - " << entry.second.size() << ":\n";
 //        for (auto& expr : entry.second) {
-//          std::cout << expr << '\n';
+//          outs() << expr << '\n';
 //        }
-//        std::cout << std::endl;
+//        outs() << "\n";
 //      }
       setCandidates(_candidates);
       vector<HornRuleExt*> worklist;
       for (auto & hr : ruleManager.chcs) worklist.push_back(&hr); // todo: wto
 
       multiHoudini(worklist);
-//      std::cout << "After Houdini " << candidates.size() << '\n';
+//      outs() << "After Houdini " << candidates.size() << '\n';
 //      for (auto& entry : candidates) {
-//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        outs() << entry.first << " - " << entry.second.size() << ":\n";
 //        for (auto& expr : entry.second) {
-//          std::cout << expr << '\n';
+//          outs() << expr << '\n';
 //        }
-//        std::cout << std::endl;
+//        outs() << "\n";
 //      }
       return checkAllOver(checkQuery);
     }
@@ -548,35 +547,36 @@ namespace ufo
     bool guessAndSolve(bool checkQuery = false)
     {
       bootstrapping();
-//      std::cout << "Bootstrapping candidates:" << std::endl;
+//      outs() << "\nBootstrapping candidates:" << "\n";
 //      for (auto& entry : candidates) {
-//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        outs() << *entry.first << " - " << entry.second.size() << ":\n";
 //        for (auto& expr : entry.second) {
-//          std::cout << expr << '\n';
+//          outs() << *expr << '\n';
 //        }
-//        std::cout << std::endl;
+//        outs() << "\n";
 //      }
 
       auto post = candidates;
       filterUnsat();
-      propagateCandidatesForward();
+      if (!ruleManager.hasBV) propagateCandidatesForward();
 
       vector<HornRuleExt*> worklist;
       for (auto & hr : ruleManager.chcs) worklist.push_back(&hr); // todo: wto
 
       multiHoudini(worklist);
 
-//      std::cout << "First multiHoudini finished!" << std::endl;
-//      std::cout << "After Houdini " << candidates.size() << '\n';
+//      outs() << "\nFirst multiHoudini finished!" << "\n";
+//      outs() << "After Houdini " << candidates.size() << '\n';
 //      for (auto& entry : candidates) {
-//        std::cout << entry.first << " - " << entry.second.size() << ":\n";
+//        outs() << *entry.first << " - " << entry.second.size() << ":\n";
 //        for (auto& expr : entry.second) {
-//          std::cout << expr << '\n';
+//          outs() << *expr << '\n';
 //        }
-//        std::cout << std::endl;
+//        outs() << "\n";
 //      }
 
       if (checkAllOver(checkQuery)) { return true; }
+      if (ruleManager.hasBV) return false;
 
       candidates.clear();
       getImplicationGuesses(post);
@@ -672,12 +672,12 @@ namespace ufo
     }
 
     // naive solving, without invariant generation
-    void solveIncrementally()
+    bool solveIncrementally()
     {
       ExprVector query;
       query.push_back(ruleManager.failDecl);
       vector<ExprVector> empt;
-      outs () << ((solveIncrementally (0, query, empt)) ? "unsat\n" : "sat\n");
+      return solveIncrementally (0, query, empt);
     }
   };
 
@@ -689,9 +689,17 @@ namespace ufo
     ruleManager.parse(smt);
     NonlinCHCsolver nonlin(ruleManager);
     if (inv)
-      nonlin.guessAndSolve();
+    {
+      if (nonlin.guessAndSolve(true))
+        outs () << "unsat\n";
+        else outs () << "unknown\n";
+    }
     else
-      nonlin.solveIncrementally();
+    {
+      if (nonlin.solveIncrementally())
+        outs () << "unsat\n";
+        else outs () << "sat\n";
+    }
   };
 }
 

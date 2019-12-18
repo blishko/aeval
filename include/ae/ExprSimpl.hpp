@@ -2549,7 +2549,10 @@ namespace ufo
       newCnjs.insert(mk<EQ>(key, m[key]));
       m[key] = value;
     }
-    else newCnjs.insert(mk<EQ>(key, value));
+    else
+    {
+      newCnjs.insert(mk<EQ>(key, value));
+    }
   }
 
   template<typename Range> static Expr simpleQE(Expr exp, Range& quantified, bool removeUsed = true, bool strict = true)
@@ -2580,7 +2583,10 @@ namespace ufo
           }
         }
       }
-      if (!eq) newCnjs.insert(a);
+      if (!eq)
+      {
+        newCnjs.insert(a);
+      }
     }
 
     Expr qed = conjoin(newCnjs, exp->getFactory());
@@ -2609,9 +2615,16 @@ namespace ufo
       if (toBreak) break;
     }
 
-    if (strict) return qed;
     newCnjs.clear();
     getConj(qed, newCnjs);
+    if (strict)
+    {
+      for (auto it = newCnjs.begin(); it != newCnjs.end(); )
+      if (emptyIntersect(*it, quantified)) ++it;
+      else it = newCnjs.erase(it);
+      return conjoin(newCnjs, exp->getFactory());
+    }
+
     for (auto & a : eqs)
     {
       if (find(used.begin(), used.end(), a.first) == used.end())
@@ -3570,6 +3583,7 @@ namespace ufo
   }
 
   bool isNonlinear(Expr e) {
+    if (isOpX<BVSORT>(e)) return true;
     int arity = e->arity();
     if (isOp<MOD>(e)) {
       if (isLitExpr(e->arg(0))) {
