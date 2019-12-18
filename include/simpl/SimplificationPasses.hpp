@@ -480,7 +480,7 @@ namespace ufo {
           assert(it != variableMap.end());
           Expr intVar = it->second;
           Expr lowerBound = mk<LEQ>(zero, intVar);
-          mpz_class ubVal = power(2, width) - 1;
+          mpz_class ubVal = bv::power(2, width) - 1;
           Expr ubValExpr = mkTerm(ubVal, efac);
           Expr upperBound = mk<LEQ>(intVar, ubValExpr);
           constraints.push_back(lowerBound);
@@ -678,7 +678,7 @@ namespace ufo {
       if (isOpX<NEQ>(e)) { return mknary<NEQ>(n_args); }
 
       // MB: This transformation is meant for translating candidate invariants, that's why we translate with AND: to get both candidates
-      if (isOpX<LEQ>(e)) { return mk<AND>(mknary<BULE>(n_args), mknary<BSLE>(n_args)); }
+      if (isOpX<LEQ>(e)) { return mknary<BULE>(n_args); }
 
       if (isOpX<GEQ>(e)) { return mknary<BUGE>(n_args); }
 
